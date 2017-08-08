@@ -45,7 +45,7 @@ void strategyb::initialHerd()
   ros::Rate loop_rate(10);
   ros::spinOnce();
 
-  while(!(mvpose.reached=='y'))
+  while(ros::ok() && !(mvpose.reached=='y'))
     ros::spinOnce();
 
   int ID = findBotNearestToQuad();
@@ -53,7 +53,7 @@ void strategyb::initialHerd()
   sendQuad(ID, 1, 'n', 0, 0, 0);
   ros::spinOnce();
 
-  while(!(mvpose.reached=='y'))
+  while(ros::ok() && !(mvpose.reached=='y'))
     ros::spinOnce();
   loop_rate.sleep();
   whereToTurn(ID);
