@@ -138,6 +138,7 @@ include_directories(
 set(STRATEGY    
   src/strategyb.cpp
   src/main.cpp
+  src/groundbot.cpp
 )
 
   add_executable(${PROJECT_NAME}_node ${STRATEGY} )
