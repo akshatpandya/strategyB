@@ -21,6 +21,7 @@ int strategyb::findBotNearestToQuad()
   int i;
   while(!(ClosestBot.empty()))
   {
+    ROS_INFO("finding closest bot\n");
     ClosestBot.clear();
     for(i=4; i<=13; i++)
     {
@@ -40,21 +41,29 @@ int strategyb::findBotNearestToQuad()
 
 void strategyb::initialHerd()
 {
-  sendQuad(1, 0, 'n', 0, 6, 2);
-  ROS_INFO("Going to 0,6 m\n");
+  sendQuad(1, 0, 'n', 0, -4, 2);
+  ROS_INFO("Going to 0,-4 m\n");
   ros::Rate loop_rate(10);
   ros::spinOnce();
 
   while(ros::ok() && !(mvpose.reached=='y'))
-    ros::spinOnce();
+  {
+  	ROS_INFO("checking for y\n");
+  	ros::spinOnce();
+  }
 
   int ID = findBotNearestToQuad();
   ROS_INFO("Found nearest bot %d\n", ID);
+  
   sendQuad(ID, 1, 'n', 0, 0, 0);
   ros::spinOnce();
 
   while(ros::ok() && !(mvpose.reached=='y'))
-    ros::spinOnce();
+  {
+  	//ROS_INFO("checking for y\n");
+  	ros::spinOnce();
+  }
+
   loop_rate.sleep();
   whereToTurn(ID);
 }
