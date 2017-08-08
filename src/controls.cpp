@@ -181,12 +181,12 @@ int main(int argc, char *argv[])
 
 
     if(QuadStatus.id>3 && QuadStatus.id<14 && QuadStatus.reached!='y')
-	{	
+	{
 	    theta = GetTheta();
 	    if(QuadStatus.mode == 0)
 	    {
-	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + ((t0)*(gbpose.twist.twist.linear.x) + 1)*(cos(theta));
-	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  ((t0)*(gbpose.twist.twist.linear.x)+1)*(sin(theta));
+	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + ((t0)*(gbpose.twist.twist.linear.x) + 0.5)*(cos(theta));
+	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  ((t0)*(gbpose.twist.twist.linear.x)+0.5)*(sin(theta));
 	    }
 	    else if(QuadStatus.mode == 1)
 	    {
@@ -213,7 +213,7 @@ int main(int argc, char *argv[])
 	    {
 	      if(count!=0)
 	      {
-				ROS_INFO("ok");
+				//ROS_INFO("ok");
 				if(flag == 0)
 		      	{
 			      if(ErrorLin_ObsMAV <= 2)
@@ -235,7 +235,7 @@ int main(int argc, char *argv[])
 					ROS_INFO("YO\n YO\n YO\n YO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\n");
 			      	ascent();
 			     	local_pos_pub.publish(pose);
-			     	flag = 1; 
+			     	flag = 1;
 		       }
 				else if(flag ==1)
 				{   ROS_INFO("avoiding RTL\n");
@@ -243,7 +243,8 @@ int main(int argc, char *argv[])
 				    pose.pose.position.y = MAVpose.pose.pose.position.y;
 				    pose.pose.position.z = Default;
 				    local_pos_pub.publish(pose);
-					QuadStatus.reached = 'y';
+					  QuadStatus.reached = 'y';
+            //Status_pub.publish(QuadStatus);
 				}
 		   }
 
@@ -252,8 +253,8 @@ int main(int argc, char *argv[])
 	}
 	else if(QuadStatus.id==1 && QuadStatus.reached!='y')
 	{
-		ROS_INFO("ERROR ====== %f \n", sqrt(pow(MAVpose.pose.pose.position.x - QuadStatus.x, 2) + pow(MAVpose.pose.pose.position.y - QuadStatus.y, 2)));
-	    ROS_INFO("reaching x,y,z QuadStatus.id %d\n ", QuadStatus.id);
+		//ROS_INFO("ERROR ====== %f \n", sqrt(pow(MAVpose.pose.pose.position.x - QuadStatus.x, 2) + pow(MAVpose.pose.pose.position.y - QuadStatus.y, 2)));
+	    //ROS_INFO("reaching x,y,z QuadStatus.id %d\n ", QuadStatus.id);
 	    pose.pose.position.x = QuadStatus.x;
 	    pose.pose.position.y = QuadStatus.y;
 	    pose.pose.position.z = QuadStatus.z;
@@ -266,29 +267,29 @@ int main(int argc, char *argv[])
 		ROS_INFO("reached\n");
 	}
 	/*if(
-	
+
 	if(flag_reached==1)
-	{ 
+	{
 		Status_pub.publish(QuadStatus);
 		flag_reached=0;
 	}*/
 	if(QuadStatus.reached=='y')
-	{	
+	{
 		ROS_INFO("publishing reached\n \n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
 		Status_pub.publish(QuadStatus);
 		flag=0;
 	}
 	while(QuadStatus.reached=='y'&&ros::ok())
 	{
-		ROS_INFO("holding position");
+		//ROS_INFO("holding position");
 		pose.pose.position.x = MAVpose.pose.pose.position.x;
     	pose.pose.position.y = MAVpose.pose.pose.position.y;
     	pose.pose.position.z = Default;
     	local_pos_pub.publish(pose);
-		ros::spinOnce();
+		  ros::spinOnce();
 	}
-	ROS_INFO("flag %d\n", flag);
-	
+	//ROS_INFO("flag %d\n", flag);
+
     ros::spinOnce();
 
   }

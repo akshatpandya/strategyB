@@ -19,7 +19,7 @@ int strategyb::findBotNearestToQuad()
   ros::spinOnce();
   loop_rate.sleep();
   int i;
-  while(!(ClosestBot.empty()))
+  while(ClosestBot.empty())
   {
     ROS_INFO("finding closest bot\n");
     ClosestBot.clear();
@@ -54,13 +54,14 @@ void strategyb::initialHerd()
 
   int ID = findBotNearestToQuad();
   ROS_INFO("Found nearest bot %d\n", ID);
-  
-  sendQuad(ID, 1, 'n', 0, 0, 0);
-  ros::spinOnce();
 
+  sendQuad(ID, 1, 'n', 0, 0, 0);
+  while(mvpose.reached!='n')
+    ros::spinOnce();
+  //ROS_INFO("N OR Y %c\n", mvpose.reached);
   while(ros::ok() && !(mvpose.reached=='y'))
   {
-  	//ROS_INFO("checking for y\n");
+  	//ROS_INFO("checking for y AGAIN\n");
   	ros::spinOnce();
   }
 
@@ -141,6 +142,7 @@ float strategyb::angle(float ang){
 
 void strategyb::rotate (double relative_angle, char publish_name[40], int ID)
 {
+  ROS_INFO("ROTATING\n");
 	geometry_msgs::Twist vel_msg;
   nav_msgs::Odometry temp;
   qt q;
@@ -170,7 +172,7 @@ void strategyb::rotate (double relative_angle, char publish_name[40], int ID)
 
   while(1)
   {
-
+    //ROS_INFO("STILL ROTATING\n");
     ros::spinOnce();
     retrieve_pose(ID, &temp);
     loop_rate.sleep();
