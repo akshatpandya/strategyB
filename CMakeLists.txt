@@ -138,11 +138,11 @@ include_directories(
 set(STRATEGY    
   src/strategyb.cpp
   src/main.cpp
-  src/groundbot.cpp
 )
 
   add_executable(${PROJECT_NAME}_node ${STRATEGY} )
   add_executable(controls src/controls.cpp )
+  add_executable(groundbot_node src/groundbot.cpp )
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -160,6 +160,10 @@ target_link_libraries(${PROJECT_NAME}_node
  )
 
 target_link_libraries(controls
+   ${catkin_LIBRARIES}
+ )
+
+target_link_libraries(groundbot_node
    ${catkin_LIBRARIES}
  )
 
