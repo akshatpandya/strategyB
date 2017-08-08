@@ -25,7 +25,7 @@
 
 #define step 0.1              // step for changing altitude gradually
 #define Eps 0.2             // range for error
-#define Default 1          // Default height for the quad
+#define Default 2.5          // Default height for the quad
 #define Delay 5             // time duration for which it is idle in front of the ground bot
 #define GBHeight 0.2
 #define Epsz 0.1
@@ -57,12 +57,12 @@ geometry_msgs::PoseStamped pose0;
 geometry_msgs::PoseStamped pose1;
 geometry_msgs::PoseStamped pose2;
 geometry_msgs::PoseStamped pose3;
-geometry_msgs::PoseStamped pose4;
 strategy::navigate_quad interact;
 int flag = 0;
 int check = 0;
 int count = 0;
 int status;
+int flag_reached = 0;
 double yaw, pitch, roll;
 
 
@@ -104,7 +104,7 @@ int main(int argc, char *argv[])
 {
   ros::init(argc,argv,"controls");
 
-  kp=0.08;//0.08
+  kp=std::atof(argv[1]);//0.08
 
   ros::NodeHandle n;
   ros::Subscriber imu_yaw = n.subscribe("mavros/local_position/odom", 10, feedbackfn);
@@ -121,22 +121,18 @@ int main(int argc, char *argv[])
   ros::Subscriber obspose_sub = n.subscribe("/robot3/odom", 100, obsCallback);
   ros::Subscriber Status_sub= n.subscribe("groundbot/tap", 10, StatusCallback);
   ros::Publisher Status_pub = n.advertise<strategy::navigate_quad>("groundbot/tap", 10);
-  ros::Subscriber state_sub = n.subscribe<mavros_msgs::State>
-            ("mavros/state", 10, state_cb);
-  ros::Publisher local_pos_pub = n.advertise<geometry_msgs::PoseStamped>
-            ("mavros/setpoint_position/local", 10);
-  ros::ServiceClient arming_client = n.serviceClient<mavros_msgs::CommandBool>
-                      ("mavros/cmd/arming");
-  ros::ServiceClient set_mode_client = n.serviceClient<mavros_msgs::SetMode>
-                      ("mavros/set_mode");
+  ros::Subscriber state_sub = n.subscribe<mavros_msgs::State>("mavros/state", 10, state_cb);
+  ros::Publisher local_pos_pub = n.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
+  ros::ServiceClient arming_client = n.serviceClient<mavros_msgs::CommandBool>("mavros/cmd/arming");
+  ros::ServiceClient set_mode_client = n.serviceClient<mavros_msgs::SetMode>("mavros/set_mode");
 
   ros::Rate rate(20.0);
 
   // wait for FCU connection
   while(ros::ok() && current_state.connected)
   {
-          ros::spinOnce();
-          rate.sleep();
+	  ros::spinOnce();
+	  rate.sleep();
   }
 
 
@@ -146,7 +142,8 @@ int main(int argc, char *argv[])
     pose0.pose.position.z = Default;
 
     //send a few setpoints before starting
-    for(int i = 100; ros::ok() && i > 0; --i){
+    for(int i = 100; ros::ok() && i > 0; --i)
+    {
         local_pos_pub.publish(pose0);
         ros::spinOnce();
         rate.sleep();
@@ -163,112 +160,136 @@ int main(int argc, char *argv[])
 
   while(ros::ok())
   {
-
     if( current_state.mode != "OFFBOARD" &&   (ros::Time::now() - last_request > ros::Duration(5.0)))
     {
-            if( set_mode_client.call(offb_set_mode) && offb_set_mode.response.success)
-                {
-                ROS_INFO("Offboard enabled");
-                }
-            last_request = ros::Time::now();
+        if( set_mode_client.call(offb_set_mode) && offb_set_mode.response.success)
+            {
+            ROS_INFO("Offboard enabled");
+            }
+        last_request = ros::Time::now();
     }
     else
     {
-            if( !current_state.armed && (ros::Time::now() - last_request > ros::Duration(5.0)))
-                {
-                if( arming_client.call(arm_cmd) &&
-                    arm_cmd.response.success)
-                    {
-                    ROS_INFO("Vehicle armed");
-                    }
-                last_request = ros::Time::now();
-                }
-    }
-
-    if(QuadStatus.id == 1)
-    {
-      pose4.pose.position.x = QuadStatus.x;
-      pose4.pose.position.y = QuadStatus.y;
-      pose4.pose.position.z = QuadStatus.z;
+        if( !current_state.armed && (ros::Time::now() - last_request > ros::Duration(5.0)))
+        {
+	        if( arming_client.call(arm_cmd) && arm_cmd.response.success)
+	        	ROS_INFO("Vehicle armed");
+	        last_request = ros::Time::now();
+        }
     }
 
 
 
-    theta = GetTheta();
-    if(QuadStatus.mode == 0)
-    {
-      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + ((t0)*(gbpose.twist.twist.linear.x) + 1)*(cos(theta));
-      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  ((t0)*(gbpose.twist.twist.linear.x)+1)*(sin(theta));
-    }
-    else if(QuadStatus.mode == 1)
-    {
-      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + (t0)*(gbpose.twist.twist.linear.x)*(cos(theta));
-      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  (t0)*(gbpose.twist.twist.linear.x)*(sin(theta));
-    }
-
-    ErrorLin = GetErrorLin(MAVdest,MAVpose);                       //error between expected and actual position of quad
-
-
-
-    if(ErrorLin > Eps)
-    {
-	    if(MAVpose.pose.pose.position.z-Default<=Epsz)
+    if(QuadStatus.id>3 && QuadStatus.id<14 && QuadStatus.reached!='y')
+	{	
+	    theta = GetTheta();
+	    if(QuadStatus.mode == 0)
 	    {
-		follow();
-		if(status==1) local_pos_pub.publish(pose1);
-		else if(status==2) local_pos_pub.publish(pose2);
+	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + ((t0)*(gbpose.twist.twist.linear.x) + 1)*(cos(theta));
+	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  ((t0)*(gbpose.twist.twist.linear.x)+1)*(sin(theta));
+	    }
+	    else if(QuadStatus.mode == 1)
+	    {
+	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + (t0)*(gbpose.twist.twist.linear.x)*(cos(theta));
+	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  (t0)*(gbpose.twist.twist.linear.x)*(sin(theta));
 	    }
 
-	    else
+	    ErrorLin = GetErrorLin(MAVdest,MAVpose);                       //error between expected and actual position of quad
+	    if(ErrorLin > Eps)
 	    {
-	    ascent();
-	    local_pos_pub.publish(pose);
+		    if(MAVpose.pose.pose.position.z-Default<=Epsz)
+		    {
+				follow();
+				if(status==1) local_pos_pub.publish(pose1);
+				else if(status==2) local_pos_pub.publish(pose2);
+		    }
+		    else
+		    {
+			    ascent();
+			    local_pos_pub.publish(pose);
+		    }
 	    }
-    }
-    else  if (ErrorLin <= Eps)
-    {
-      if(count!=0)
-      {
-      ROS_INFO("ok");
-     if(flag == 0)
-      {
-        if(ErrorLin_ObsMAV <= 2)
-        {
-          pose3.pose.position.x = MAVpose.pose.pose.position.x;
-          pose3.pose.position.y = MAVpose.pose.pose.position.y;
-          pose3.pose.position.z = Default;
-          local_pos_pub.publish(pose3);
-        }
-        else
-        {
-	      descent();
-        local_pos_pub.publish(pose);
-        }
-      }
-      //printf("flag=%d\n", flag);
-       if (fabs(MAVpose.pose.pose.position.z-GBHeight)<=Epsz)
-      {
-	ROS_INFO("YO\n YO\n YO\n YO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\n");
-      ascent();
-      local_pos_pub.publish(pose);
-      flag = 1;
-      }
-	else if(flag ==1)
-	{   ROS_INFO("avoiding RTL\n");
-	    pose.pose.position.x = MAVpose.pose.pose.position.x;
-	    pose.pose.position.y = MAVpose.pose.pose.position.y;
-	    pose.pose.position.z = Default;
-	    local_pos_pub.publish(pose);
-      QuadStatus.reached = 'y';
-      Status_pub.publish(QuadStatus);
+	    else if (ErrorLin <= Eps)
+	    {
+	      if(count!=0)
+	      {
+				ROS_INFO("ok");
+				if(flag == 0)
+		      	{
+			      if(ErrorLin_ObsMAV <= 2)
+			      {
+			        pose3.pose.position.x = MAVpose.pose.pose.position.x;
+			        pose3.pose.position.y = MAVpose.pose.pose.position.y;
+			        pose3.pose.position.z = Default;
+			        local_pos_pub.publish(pose3);
+			      }
+			      else
+			      {
+				    descent();
+			      local_pos_pub.publish(pose);
+			      }
+		     	}
+		      	//printf("flag=%d\n", flag);
+		       if (fabs(MAVpose.pose.pose.position.z-GBHeight)<=Epsz)
+		       {
+					ROS_INFO("YO\n YO\n YO\n YO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\n");
+			      	ascent();
+			     	local_pos_pub.publish(pose);
+			     	flag = 1; 
+		       }
+				else if(flag ==1)
+				{   ROS_INFO("avoiding RTL\n");
+				    pose.pose.position.x = MAVpose.pose.pose.position.x;
+				    pose.pose.position.y = MAVpose.pose.pose.position.y;
+				    pose.pose.position.z = Default;
+				    local_pos_pub.publish(pose);
+					QuadStatus.reached = 'y';
+				}
+		   }
+
+		   count ++;
+	    }
 	}
-        }
+	else if(QuadStatus.id==1 && QuadStatus.reached!='y')
+	{
+		ROS_INFO("ERROR ====== %f \n", sqrt(pow(MAVpose.pose.pose.position.x - QuadStatus.x, 2) + pow(MAVpose.pose.pose.position.y - QuadStatus.y, 2)));
+	    ROS_INFO("reaching x,y,z QuadStatus.id %d\n ", QuadStatus.id);
+	    pose.pose.position.x = QuadStatus.x;
+	    pose.pose.position.y = QuadStatus.y;
+	    pose.pose.position.z = QuadStatus.z;
+	    local_pos_pub.publish(pose);
+	}
 
-      count ++;
-    }
-
+	if(sqrt(pow(MAVpose.pose.pose.position.x - QuadStatus.x, 2) + pow(MAVpose.pose.pose.position.y - QuadStatus.y, 2)) <= 0.4 && QuadStatus.id==1)
+	{
+		QuadStatus.reached = 'y';
+		ROS_INFO("reached\n");
+	}
+	/*if(
+	
+	if(flag_reached==1)
+	{ 
+		Status_pub.publish(QuadStatus);
+		flag_reached=0;
+	}*/
+	if(QuadStatus.reached=='y')
+	{	
+		ROS_INFO("publishing reached\n \n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
+		Status_pub.publish(QuadStatus);
+		flag=0;
+	}
+	while(QuadStatus.reached=='y'&&ros::ok())
+	{
+		ROS_INFO("holding position");
+		pose.pose.position.x = MAVpose.pose.pose.position.x;
+    	pose.pose.position.y = MAVpose.pose.pose.position.y;
+    	pose.pose.position.z = Default;
+    	local_pos_pub.publish(pose);
+		ros::spinOnce();
+	}
+	ROS_INFO("flag %d\n", flag);
+	
     ros::spinOnce();
-
 
   }
   return (0);
