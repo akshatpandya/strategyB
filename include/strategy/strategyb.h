@@ -53,13 +53,16 @@ public:
 	ros:: Subscriber nav_quad;
 
   void initialHerd();
-  int findBotNearestToQuad();
-  //void coreStrategy();
+  int findBotNearestToQuad(int hover);
   void whereToTurn(int ID);
 	void sendQuad(int id, int mode, char reached, double x, double y, double z);
 	void GetEulerAngles(qt q, double* yaw, double* pitch, double* roll);
   void rotate (double relative_angle, char publish_name[40], int ID);
 	float angle(float ang);
+	void greedy();
+	void translateFrame();
+	int removeTheLockedBot(int ID);
+	int isOutsideGreen(int ID);
 
   strategyb()
   {
@@ -77,7 +80,8 @@ public:
 		nav_quad = n.subscribe("groundbot/tap", 100, &strategyb::nav_quad_callback,this);
     botToTap = n.advertise<strategy::navigate_quad>("groundbot/tap",1000, true);
     firstrun = true;
-
+		flag = 0;
+		lockID = 0;
   }
 
 
@@ -96,7 +100,8 @@ private:
 	strategy::navigate_quad mvpose;
 	typedef pair <double, int> p;
 	set<p> ClosestBot;
-  int flagForTapCheck;
+  int flag, lockID;
   bool firstrun;
+	double *frameX, *frameY;
 };
 #endif

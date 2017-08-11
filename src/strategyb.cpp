@@ -3,6 +3,8 @@
 #include <utility>
 #include <set>
 #include <math.h>
+#include <chrono>
+#include <thread>
 #include "ros/ros.h"
 #include "nav_msgs/Odometry.h"
 #include "../include/strategy/strategyb.h"
@@ -10,8 +12,10 @@
 #define PI 3.14159
 #define angular_speed 0.76
 using namespace std;
+using namespace std::this_thread;
+using namespace std::chrono;
 
-int strategyb::findBotNearestToQuad()
+int strategyb::findBotNearestToQuad(int hover)
 {
   nav_msgs::Odometry position;
   ClosestBot.clear();
@@ -19,7 +23,7 @@ int strategyb::findBotNearestToQuad()
   ros::spinOnce();
   loop_rate.sleep();
   int i;
-  while(ClosestBot.empty())
+  while(ClosestBot.empty() && hover==1)
   {
     ROS_INFO("finding closest bot\n");
     ClosestBot.clear();
@@ -52,7 +56,7 @@ void strategyb::initialHerd()
   	ros::spinOnce();
   }
 
-  int ID = findBotNearestToQuad();
+  int ID = findBotNearestToQuad(1);
   ROS_INFO("Found nearest bot %d\n", ID);
 
   sendQuad(ID, 1, 'n', 0, 0, 0);
@@ -67,6 +71,96 @@ void strategyb::initialHerd()
 
   loop_rate.sleep();
   whereToTurn(ID);
+}
+
+void strategyb::greedy()
+{
+  ros::Rate loop_rate(10);
+  if(flag==0)
+  {
+    if(firstrun==true)
+    {
+      sendQuad(1, 0, 'n', -7.5, 1, 2);
+      while(mvpose.reached!='n')
+        ros::spinOnce();
+      while(ros::ok() && !(mvpose.reached=='y'))
+      	ros::spinOnce();
+    }
+    else
+    {
+      sendQuad(1, 0, 'n', -7.5, 9, 2);
+      while(mvpose.reached!='n')
+        ros::spinOnce();
+      while(ros::ok() && !(mvpose.reached=='y'))
+      	ros::spinOnce();
+    }
+    flag = 1;
+  }
+
+  int ID = findBotNearestToQuad(0);
+  if(ID==0)
+  {
+    translateFrame();
+    sendQuad(1, 0,'n', *frameX, *frameY, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
+  }
+
+  else
+  {
+    lockID = ID;
+    sendQuad(ID, 1,'n', 0, 0, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
+    whereToTurn(ID);
+    removeTheLockedBot(lockID);
+  }
+}
+
+int strategyb::removeTheLockedBot(int ID)
+{
+  int removed = 0;
+  while(ros::ok() && removed==1)
+  {
+    sleep_until(system_clock::now() + seconds(5));
+    sendQuad(ID, -1, 'n', 0, 0, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
+    whereToTurn(ID);
+    removed = isOutsideGreen(ID);
+  }
+}
+
+int strategyb::isOutsideGreen(int ID)
+{
+  nav_msgs::Odometry position;
+  ClosestBot.clear();
+  ros::Rate loop_rate(10);
+  ros::spinOnce();
+  retrieve_pose(ID, &position);
+  if(position.pose.pose.position.y < 10)
+    return 0;
+  else
+    return 1;
+}
+
+void strategyb::translateFrame()
+{
+  if((*frameX+7.5)>10)
+    *frameX = *frameX - 5;
+  else if((*frameX-7.5)<-10)
+    *frameX = *frameX + 5;
+
+  if((*frameY-1)<0)
+    *frameY = *frameY + 1;
+  else if((*frameY+1)>10)
+    *frameY = *frameY - 1;
 }
 
 void strategyb::sendQuad(int id, int mode, char reached, double x, double y, double z)
