@@ -82,6 +82,13 @@ public:
     firstrun = true;
 		flag = 0;
 		lockID = 0;
+		right = true;
+		left = false;
+		up = false;
+		thresx = 5;
+		thresy = 1;
+		*frameX = 0;
+		*frameY = 0;
   }
 
 
@@ -100,8 +107,9 @@ private:
 	strategy::navigate_quad mvpose;
 	typedef pair <double, int> p;
 	set<p> ClosestBot;
-  int flag, lockID;
+  int flag, lockID, thresx, thresy;
   bool firstrun;
 	double *frameX, *frameY;
+	bool right, left, up;
 };
 #endif

@@ -15,15 +15,18 @@ using namespace std;
 using namespace std::this_thread;
 using namespace std::chrono;
 
+//put a check for if nothing found in the first greedy run
+
 int strategyb::findBotNearestToQuad(int hover)
 {
+  ROS_INFO("inside findBotNearestToQuad\n");
   nav_msgs::Odometry position;
   ClosestBot.clear();
   ros::Rate loop_rate(10);
   ros::spinOnce();
   loop_rate.sleep();
   int i;
-  while(ClosestBot.empty() && hover==1)
+  while(ClosestBot.empty())
   {
     ROS_INFO("finding closest bot\n");
     ClosestBot.clear();
@@ -39,20 +42,25 @@ int strategyb::findBotNearestToQuad(int hover)
         ClosestBot.insert(make_pair(distance, i));
       }
     }
+    if(hover==0)
+      break;
   }
-  return ((*ClosestBot.begin()).second);
+  if(ClosestBot.empty())
+    return 0;
+  else
+    return ((*ClosestBot.begin()).second);
 }
 
 void strategyb::initialHerd()
 {
-  sendQuad(1, 0, 'n', 0, -4, 2);
-  ROS_INFO("Going to 0,-4 m\n");
+  sendQuad(1, 0, 'n', 0, -3, 2);
+  ROS_INFO("Going to 0,-3 m\n");
   ros::Rate loop_rate(10);
   ros::spinOnce();
 
   while(ros::ok() && !(mvpose.reached=='y'))
   {
-  	ROS_INFO("checking for y\n");
+  	//ROS_INFO("checking for y\n");
   	ros::spinOnce();
   }
 
@@ -85,6 +93,10 @@ void strategyb::greedy()
         ros::spinOnce();
       while(ros::ok() && !(mvpose.reached=='y'))
       	ros::spinOnce();
+      ROS_INFO("REACHED FIRST POSIITON\n");
+      *frameX = -7.5;
+      *frameY = 1;
+
     }
     else
     {
@@ -93,14 +105,24 @@ void strategyb::greedy()
         ros::spinOnce();
       while(ros::ok() && !(mvpose.reached=='y'))
       	ros::spinOnce();
+      *frameX = -7.5;
+      *frameY = 9;
+      thresx = 5;
+      thresy = -1;
     }
+    firstrun = false;
     flag = 1;
   }
+  ROS_INFO("bahar aa gaya\n");
+  int ID = 0;
+  ID = findBotNearestToQuad(0);
 
-  int ID = findBotNearestToQuad(0);
+  ROS_INFO("Found inside frame bot ID: %d\n", ID);
+
   if(ID==0)
   {
     translateFrame();
+    ROS_INFO("after translateFrame\n");
     sendQuad(1, 0,'n', *frameX, *frameY, 0);
     while(mvpose.reached!='n')
       ros::spinOnce();
@@ -111,6 +133,9 @@ void strategyb::greedy()
   else
   {
     lockID = ID;
+
+    ROS_INFO("LOCKED ID: %d\n", ID);
+
     sendQuad(ID, 1,'n', 0, 0, 0);
     while(mvpose.reached!='n')
       ros::spinOnce();
@@ -119,22 +144,24 @@ void strategyb::greedy()
     whereToTurn(ID);
     removeTheLockedBot(lockID);
   }
+  loop_rate.sleep();
 }
 
 int strategyb::removeTheLockedBot(int ID)
 {
   int removed = 0;
-  while(ros::ok() && removed==1)
+  while(ros::ok() && removed==0)
   {
-    sleep_until(system_clock::now() + seconds(5));
     sendQuad(ID, -1, 'n', 0, 0, 0);
     while(mvpose.reached!='n')
       ros::spinOnce();
-    while(ros::ok() && !(mvpose.reached=='y'))
-      ros::spinOnce();
+    sleep_until(system_clock::now() + seconds(7));
+    // while(ros::ok() && !(mvpose.reached=='y'))
+    //   ros::spinOnce();
     whereToTurn(ID);
     removed = isOutsideGreen(ID);
   }
+  flag = 0;
 }
 
 int strategyb::isOutsideGreen(int ID)
@@ -152,15 +179,56 @@ int strategyb::isOutsideGreen(int ID)
 
 void strategyb::translateFrame()
 {
-  if((*frameX+7.5)>10)
-    *frameX = *frameX - 5;
-  else if((*frameX-7.5)<-10)
-    *frameX = *frameX + 5;
+  if(*frameX==-7.5 || right==true)
+  {
+    right = true;
+    left = false;
+    *frameX = *frameX + thresx;
+    if(*frameY<10 && *frameY>=0)
+    {
+      if(*frameX==7.5)
+        up = true;
+      if(up==true)
+      {
+        *frameY += thresy;
+        up = false;
+      }
+    }
+    else
+    {
+      sendQuad(1, 0, 'n', -7.5, 9, 2);
+      while(mvpose.reached!='n')
+        ros::spinOnce();
+      while(ros::ok() && !(mvpose.reached=='y'))
+      	ros::spinOnce();
+    }
 
-  if((*frameY-1)<0)
-    *frameY = *frameY + 1;
-  else if((*frameY+1)>10)
-    *frameY = *frameY - 1;
+  }
+
+  if(*frameX==7.5 || left==true)
+  {
+    right = false;
+    left = true;
+    *frameX = *frameX - thresx;
+    if(*frameY<10 && *frameY>=0)
+    {
+      if(*frameX==-7.5)
+        up = true;
+      if(up==true)
+      {
+        *frameY += thresy;
+        up = false;
+      }
+    }
+    else
+    {
+      sendQuad(1, 0, 'n', -7.5, 9, 2);
+      while(mvpose.reached!='n')
+        ros::spinOnce();
+      while(ros::ok() && !(mvpose.reached=='y'))
+      	ros::spinOnce();
+    }
+  }
 }
 
 void strategyb::sendQuad(int id, int mode, char reached, double x, double y, double z)

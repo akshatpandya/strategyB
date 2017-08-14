@@ -188,7 +188,7 @@ int main(int argc, char *argv[])
 	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + ((t0)*(gbpose.twist.twist.linear.x) + 0.5)*(cos(theta));
 	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  ((t0)*(gbpose.twist.twist.linear.x)+0.5)*(sin(theta));
 	    }
-	    else if(QuadStatus.mode == 1)
+	    else if(QuadStatus.mode == 1 || QuadStatus.mode == (-1))
 	    {
 	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + (t0)*(gbpose.twist.twist.linear.x)*(cos(theta));
 	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  (t0)*(gbpose.twist.twist.linear.x)*(sin(theta));
@@ -209,7 +209,7 @@ int main(int argc, char *argv[])
 			    local_pos_pub.publish(pose);
 		    }
 	    }
-	    else if (ErrorLin <= Eps)
+	    else if (ErrorLin <= Eps && QuadStatus.mode != (-1))
 	    {
 	      if(count!=0)
 	      {

@@ -8,4 +8,8 @@ int main(int argc, char *argv[])
 	strategyb STRATEGY;
 
   STRATEGY.initialHerd();
+	while(ros::ok())
+	{
+		STRATEGY.greedy();
+	}
 }
