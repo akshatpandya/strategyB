@@ -87,6 +87,8 @@ public:
 		up = false;
 		thresx = 5;
 		thresy = 1;
+	  	frameX = new double;
+	  	frameY = new double;
 		*frameX = 0;
 		*frameY = 0;
   }
