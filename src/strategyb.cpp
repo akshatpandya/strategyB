@@ -93,10 +93,8 @@ void strategyb::greedy()
         ros::spinOnce();
       while(ros::ok() && !(mvpose.reached=='y'))
       	ros::spinOnce();
-      ROS_INFO("REACHED FIRST POSIITON\n");
       *frameX = -7.5;
       *frameY = 1;
-
     }
     else
     {
@@ -113,7 +111,6 @@ void strategyb::greedy()
     firstrun = false;
     flag = 1;
   }
-  ROS_INFO("bahar aa gaya\n");
   int ID = 0;
   ID = findBotNearestToQuad(0);
 
@@ -122,8 +119,7 @@ void strategyb::greedy()
   if(ID==0)
   {
     translateFrame();
-    ROS_INFO("after translateFrame\n");
-    sendQuad(1, 0,'n', *frameX, *frameY, 0);
+    sendQuad(1, 0,'n', *frameX, *frameY, 2);
     while(mvpose.reached!='n')
       ros::spinOnce();
     while(ros::ok() && !(mvpose.reached=='y'))
@@ -158,6 +154,11 @@ int strategyb::removeTheLockedBot(int ID)
     sleep_until(system_clock::now() + seconds(7));
     // while(ros::ok() && !(mvpose.reached=='y'))
     //   ros::spinOnce();
+    sendQuad(ID, 1,'n', 0, 0, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
     whereToTurn(ID);
     removed = isOutsideGreen(ID);
   }
@@ -177,13 +178,13 @@ int strategyb::isOutsideGreen(int ID)
     return 1;
 }
 
-void strategyb::translateFrame()
+int strategyb::translateFrame()
 {
   if(*frameX==-7.5 || right==true)
   {
     right = true;
     left = false;
-    *frameX = *frameX + thresx;
+
     if(*frameY<10 && *frameY>=0)
     {
       if(*frameX==7.5)
@@ -193,6 +194,14 @@ void strategyb::translateFrame()
         *frameY += thresy;
         up = false;
       }
+      *frameX = *frameX + thresx;
+      if(*frameX>7.5)
+      {
+        *frameX = *frameX - thresx;
+        right = false;
+        return 0;
+      }
+      return 0;
     }
     else
     {
@@ -201,15 +210,15 @@ void strategyb::translateFrame()
         ros::spinOnce();
       while(ros::ok() && !(mvpose.reached=='y'))
       	ros::spinOnce();
-    }
+      thresy = -1;
 
+    }
   }
 
   if(*frameX==7.5 || left==true)
   {
     right = false;
     left = true;
-    *frameX = *frameX - thresx;
     if(*frameY<10 && *frameY>=0)
     {
       if(*frameX==-7.5)
@@ -219,6 +228,14 @@ void strategyb::translateFrame()
         *frameY += thresy;
         up = false;
       }
+      *frameX = *frameX - thresx;
+      if(*frameX<-7.5)
+      {
+        *frameX = *frameX + thresx;
+        left = false;
+        return 0;
+      }
+      return 0;
     }
     else
     {
@@ -227,6 +244,7 @@ void strategyb::translateFrame()
         ros::spinOnce();
       while(ros::ok() && !(mvpose.reached=='y'))
       	ros::spinOnce();
+      thresy = -1;
     }
   }
 }

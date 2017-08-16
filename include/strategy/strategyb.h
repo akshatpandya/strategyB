@@ -60,7 +60,7 @@ public:
   void rotate (double relative_angle, char publish_name[40], int ID);
 	float angle(float ang);
 	void greedy();
-	void translateFrame();
+	int translateFrame();
 	int removeTheLockedBot(int ID);
 	int isOutsideGreen(int ID);
 
@@ -87,8 +87,10 @@ public:
 		up = false;
 		thresx = 5;
 		thresy = 1;
-		*frameX = 0;
-		*frameY = 0;
+		frameX = new double;
+		frameY = new double;
+		*frameX = 0.0;
+		*frameY = 0.0;
   }
 
 
