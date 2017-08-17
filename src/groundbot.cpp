@@ -12,7 +12,7 @@
 float v_max = 0.06;
 float a_max = 0.65;
 float a_max_p = 0.006;
-double wait_period = 5;
+double wait_period = 20;
 
 //Common
 bool bool_turn = false;
@@ -278,7 +278,6 @@ public:
 
   /**
     Outputs angle error.
-
     IARC documentation specifies that an error of
     upto 20 degrees is added to the groundbot path
     every 5 seconds. We instead of adding error every

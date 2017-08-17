@@ -65,17 +65,8 @@ void strategyb::initialHerd()
   }
 
   int ID = findBotNearestToQuad(1);
-  ROS_INFO("Found nearest bot %d\n", ID);
 
-  sendQuad(ID, 1, 'n', 0, 0, 0);
-  while(mvpose.reached!='n')
-    ros::spinOnce();
-  //ROS_INFO("N OR Y %c\n", mvpose.reached);
-  while(ros::ok() && !(mvpose.reached=='y'))
-  {
-  	//ROS_INFO("checking for y AGAIN\n");
-  	ros::spinOnce();
-  }
+  ROS_INFO("Found nearest bot %d\n", ID);
 
   loop_rate.sleep();
   whereToTurn(ID);
@@ -132,11 +123,6 @@ void strategyb::greedy()
 
     ROS_INFO("LOCKED ID: %d\n", ID);
 
-    sendQuad(ID, 1,'n', 0, 0, 0);
-    while(mvpose.reached!='n')
-      ros::spinOnce();
-    while(ros::ok() && !(mvpose.reached=='y'))
-      ros::spinOnce();
     whereToTurn(ID);
     removeTheLockedBot(lockID);
   }
@@ -146,20 +132,29 @@ void strategyb::greedy()
 int strategyb::removeTheLockedBot(int ID)
 {
   int removed = 0;
+  bool rotating = false;
   while(ros::ok() && removed==0)
   {
+    ros::Rate loop_rate(10);
+    geometry_msgs::Twist vel;
+
     sendQuad(ID, -1, 'n', 0, 0, 0);
     while(mvpose.reached!='n')
       ros::spinOnce();
-    sleep_until(system_clock::now() + seconds(7));
-    // while(ros::ok() && !(mvpose.reached=='y'))
-    //   ros::spinOnce();
-    sendQuad(ID, 1,'n', 0, 0, 0);
-    while(mvpose.reached!='n')
-      ros::spinOnce();
-    while(ros::ok() && !(mvpose.reached=='y'))
-      ros::spinOnce();
-    whereToTurn(ID);
+
+    ros::spinOnce();
+    retrieve_vel(ID, &vel);
+
+    if(fabs(vel.linear.x)<=0.1 && fabs(vel.linear.y)<=0.1 && fabs(vel.angular.z)>=0.01)
+    {
+      while(fabs(vel.angular.z)<=0.01 && fabs(vel.linear.x)>=0.1 && fabs(vel.linear.y)>=0.1)
+      {
+        ROS_INFO("Rotating\n");
+        ros::spinOnce();
+        retrieve_vel(ID, &vel);
+      }
+      whereToTurn(ID);
+    }
     removed = isOutsideGreen(ID);
   }
   flag = 0;
@@ -180,7 +175,7 @@ int strategyb::isOutsideGreen(int ID)
 
 int strategyb::translateFrame()
 {
-  if(*frameX==-7.5 || right==true)
+  if((*frameX==-7.5 && left==false) || right==true)
   {
     right = true;
     left = false;
@@ -210,12 +205,14 @@ int strategyb::translateFrame()
         ros::spinOnce();
       while(ros::ok() && !(mvpose.reached=='y'))
       	ros::spinOnce();
-      thresy = -1;
+      thresy = thresy*(-1);
+      *frameX = -7.5;
+      *frameY = 9;
 
     }
   }
 
-  if(*frameX==7.5 || left==true)
+  if((*frameX==7.5 && right==false) || left==true)
   {
     right = false;
     left = true;
@@ -244,7 +241,9 @@ int strategyb::translateFrame()
         ros::spinOnce();
       while(ros::ok() && !(mvpose.reached=='y'))
       	ros::spinOnce();
-      thresy = -1;
+      thresy = thresy*(-1);
+      *frameX = -7.5;
+      *frameY = 9;
     }
   }
 }
@@ -291,23 +290,67 @@ void strategyb::whereToTurn(int ID)
 
 	else if((yaw>=angle(theta1+PI) && yaw<=angle(theta2+PI) ) || (angle(theta1+PI)*angle(theta2+PI)<0 && (yaw>=angle(theta1+PI) || yaw<=angle(theta2+PI)) ) )
 	{
-		//ROS_INFO("Condition 1 for target bot::::::180 degree turn %f\n",yaw);
+		ROS_INFO("Condition 1 for target bot: 180 degree turn %f\n",yaw);
+
+    sendQuad(ID, 0, 'n', 0, 0, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
+
     rotate(PI,publish_name,ID);
 	}
 	else if((yaw>theta2 && yaw<angle(theta2+PI/4)) || ( theta2*angle(theta2+PI/4)<0 && (yaw>theta2 || yaw<angle(theta2+PI/4))))
 	{
-    	//ROS_INFO("Condition 4 for target bot::::::180 then 45 degree turn\n");
-    	rotate((5*PI/4),publish_name,ID);
+  	ROS_INFO("Condition 2 for target bot: 180 then 45 degree turn\n");
+
+    sendQuad(ID, 0, 'n', 0, 0, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
+
+    rotate(PI,publish_name,ID);
+
+    sendQuad(ID, 1, 'n', 0, 0, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
+
+  	rotate(PI/4,publish_name,ID);
 	}
 	else if(yaw>=angle(theta2 + PI/4) && yaw<=angle(theta2 + PI/2) || ( angle(theta2+PI/4)*angle(theta2+PI/2)<0 && (yaw>angle(theta1+PI/4) || yaw<angle(theta2+PI/2))))
 	{
-		//ROS_INFO("Condition 3 for target bot::::::90 degree turn, tap twice\n");
-    rotate((PI/2),publish_name,ID);
+		ROS_INFO("Condition 3 for target bot: 90 degree turn, tap twice\n");
+
+    sendQuad(ID, 1, 'n', 0, 0, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
+
+    rotate(PI/4,publish_name,ID);
+
+    sendQuad(ID, 1, 'n', 0, 0, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
+
+    rotate(PI/4,publish_name,ID);
 	}
 	else if(yaw>=angle(theta2+PI) && yaw<=angle(theta2+PI+PI/4) || (angle(theta2+PI)*angle(theta2+PI+PI/4) && (yaw>=angle(theta2+PI) && yaw<=angle(theta2+PI+PI/4))))
 	{
-		//ROS_INFO("Condition 2 for target bot::::::45 degree turn \n");
-    rotate((PI/4),publish_name,ID);
+		ROS_INFO("Condition 4 for target bot: 45 degree turn \n");
+
+    sendQuad(ID, 1, 'n', 0, 0, 0);
+    while(mvpose.reached!='n')
+      ros::spinOnce();
+    while(ros::ok() && !(mvpose.reached=='y'))
+      ros::spinOnce();
+
+    rotate(PI/4,publish_name,ID);
 	}
 }
 
@@ -532,6 +575,107 @@ void strategyb::groundbot13Callback(const nav_msgs::Odometry::ConstPtr& msg)
   return;
 }
 
+void strategyb::groundbot_vel_4Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_4.linear.x = msg->linear.x;
+  vel_4.linear.y = msg->linear.y;
+  vel_4.linear.z = msg->linear.z;
+  vel_4.angular.x = msg->angular.x;
+  vel_4.angular.y = msg->angular.y;
+  vel_4.angular.z = msg->angular.z;
+}
+
+void strategyb::groundbot_vel_5Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_5.linear.x = msg->linear.x;
+  vel_5.linear.y = msg->linear.y;
+  vel_5.linear.z = msg->linear.z;
+  vel_5.angular.x = msg->angular.x;
+  vel_5.angular.y = msg->angular.y;
+  vel_5.angular.z = msg->angular.z;
+}
+
+void strategyb::groundbot_vel_6Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_6.linear.x = msg->linear.x;
+  vel_6.linear.y = msg->linear.y;
+  vel_6.linear.z = msg->linear.z;
+  vel_6.angular.x = msg->angular.x;
+  vel_6.angular.y = msg->angular.y;
+  vel_6.angular.z = msg->angular.z;
+}
+
+void strategyb::groundbot_vel_7Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_7.linear.x = msg->linear.x;
+  vel_7.linear.y = msg->linear.y;
+  vel_7.linear.z = msg->linear.z;
+  vel_7.angular.x = msg->angular.x;
+  vel_7.angular.y = msg->angular.y;
+  vel_7.angular.z = msg->angular.z;
+}
+
+void strategyb::groundbot_vel_8Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_8.linear.x = msg->linear.x;
+  vel_8.linear.y = msg->linear.y;
+  vel_8.linear.z = msg->linear.z;
+  vel_8.angular.x = msg->angular.x;
+  vel_8.angular.y = msg->angular.y;
+  vel_8.angular.z = msg->angular.z;
+}
+
+void strategyb::groundbot_vel_9Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_9.linear.x = msg->linear.x;
+  vel_9.linear.y = msg->linear.y;
+  vel_9.linear.z = msg->linear.z;
+  vel_9.angular.x = msg->angular.x;
+  vel_9.angular.y = msg->angular.y;
+  vel_9.angular.z = msg->angular.z;
+}
+
+void strategyb::groundbot_vel_10Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_10.linear.x = msg->linear.x;
+  vel_10.linear.y = msg->linear.y;
+  vel_10.linear.z = msg->linear.z;
+  vel_10.angular.x = msg->angular.x;
+  vel_10.angular.y = msg->angular.y;
+  vel_10.angular.z = msg->angular.z;
+}
+
+void strategyb::groundbot_vel_11Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_11.linear.x = msg->linear.x;
+  vel_11.linear.y = msg->linear.y;
+  vel_11.linear.z = msg->linear.z;
+  vel_11.angular.x = msg->angular.x;
+  vel_11.angular.y = msg->angular.y;
+  vel_11.angular.z = msg->angular.z;
+}
+
+void strategyb::groundbot_vel_12Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_12.linear.x = msg->linear.x;
+  vel_12.linear.y = msg->linear.y;
+  vel_12.linear.z = msg->linear.z;
+  vel_12.angular.x = msg->angular.x;
+  vel_12.angular.y = msg->angular.y;
+  vel_12.angular.z = msg->angular.z;
+}
+
+void strategyb::groundbot_vel_13Callback(const geometry_msgs::Twist::ConstPtr& msg)
+{
+  vel_13.linear.x = msg->linear.x;
+  vel_13.linear.y = msg->linear.y;
+  vel_13.linear.z = msg->linear.z;
+  vel_13.angular.x = msg->angular.x;
+  vel_13.angular.y = msg->angular.y;
+  vel_13.angular.z = msg->angular.z;
+}
+
+
 void strategyb::feedbackfn(const nav_msgs::Odometry::ConstPtr& odom_data)
 {
   // MAVpose.pose.pose.position.x = odom_data->pose.pose.position.x;
@@ -551,7 +695,7 @@ void strategyb::nav_quad_callback(const strategy::navigate_quad::ConstPtr& msg)
 }
 
 
-void strategyb:: retrieve_pose(int ID, nav_msgs::Odometry *gbpose)
+void strategyb::retrieve_pose(int ID, nav_msgs::Odometry *gbpose)
 {
   switch(ID)
   {
@@ -691,6 +835,111 @@ void strategyb:: retrieve_pose(int ID, nav_msgs::Odometry *gbpose)
       gbpose->twist.twist.linear.x = gb13pose.twist.twist.linear.x;
       gbpose->twist.twist.linear.y = gb13pose.twist.twist.linear.y;
       gbpose->twist.twist.linear.z = gb13pose.twist.twist.linear.z;
+      //return gbpose;
+      break;
+  }
+}
+
+void strategyb::retrieve_vel(int ID, geometry_msgs::Twist *gbpose)
+{
+  switch(ID)
+  {
+    case 4:
+      gbpose->linear.x = vel_4.linear.x;
+      gbpose->linear.x = vel_4.linear.y;
+      gbpose->linear.x = vel_4.linear.z;
+      gbpose->angular.x = vel_4.angular.x;
+      gbpose->angular.y = vel_4.angular.y;
+      gbpose->angular.z = vel_4.angular.z;
+      //return gbpose;
+      break;
+
+    case 5:
+      gbpose->linear.x = vel_5.linear.x;
+      gbpose->linear.x = vel_5.linear.y;
+      gbpose->linear.x = vel_5.linear.z;
+      gbpose->angular.x = vel_5.angular.x;
+      gbpose->angular.y = vel_5.angular.y;
+      gbpose->angular.z = vel_5.angular.z;
+     // return gbpose;
+      break;
+
+    case 6:
+      gbpose->linear.x = vel_6.linear.x;
+      gbpose->linear.x = vel_6.linear.y;
+      gbpose->linear.x = vel_6.linear.z;
+      gbpose->angular.x = vel_6.angular.x;
+      gbpose->angular.y = vel_6.angular.y;
+      gbpose->angular.z = vel_6.angular.z;
+     // return gbpose;
+      break;
+    case 7:
+      gbpose->linear.x = vel_7.linear.x;
+      gbpose->linear.x = vel_7.linear.y;
+      gbpose->linear.x = vel_7.linear.z;
+      gbpose->angular.x = vel_7.angular.x;
+      gbpose->angular.y = vel_7.angular.y;
+      gbpose->angular.z = vel_7.angular.z;
+     // return gbpose;
+      break;
+
+    case 8:
+      gbpose->linear.x = vel_8.linear.x;
+      gbpose->linear.x = vel_8.linear.y;
+      gbpose->linear.x = vel_8.linear.z;
+      gbpose->angular.x = vel_8.angular.x;
+      gbpose->angular.y = vel_8.angular.y;
+      gbpose->angular.z = vel_8.angular.z;
+     // return gbpose;
+      break;
+
+    case 9:
+      gbpose->linear.x = vel_9.linear.x;
+      gbpose->linear.x = vel_9.linear.y;
+      gbpose->linear.x = vel_9.linear.z;
+      gbpose->angular.x = vel_9.angular.x;
+      gbpose->angular.y = vel_9.angular.y;
+      gbpose->angular.z = vel_9.angular.z;
+     // return gbpose;
+      break;
+
+    case 10:
+      gbpose->linear.x = vel_10.linear.x;
+      gbpose->linear.x = vel_10.linear.y;
+      gbpose->linear.x = vel_10.linear.z;
+      gbpose->angular.x = vel_10.angular.x;
+      gbpose->angular.y = vel_10.angular.y;
+      gbpose->angular.z = vel_10.angular.z;
+      //return gbpose;
+      break;
+
+    case 11:
+      gbpose->linear.x = vel_11.linear.x;
+      gbpose->linear.x = vel_11.linear.y;
+      gbpose->linear.x = vel_11.linear.z;
+      gbpose->angular.x = vel_11.angular.x;
+      gbpose->angular.y = vel_11.angular.y;
+      gbpose->angular.z = vel_11.angular.z;
+      //return gbpose;
+      break;
+
+    case 12:
+      gbpose->linear.x = vel_12.linear.x;
+      gbpose->linear.x = vel_12.linear.y;
+      gbpose->linear.x = vel_12.linear.z;
+      gbpose->angular.x = vel_12.angular.x;
+      gbpose->angular.y = vel_12.angular.y;
+      gbpose->angular.z = vel_12.angular.z;
+      //return gbpose;
+      break;
+
+    case 13:
+      gbpose->linear.x = vel_13.linear.x;
+      gbpose->linear.x = vel_13.linear.y;
+      gbpose->linear.x = vel_13.linear.z;
+      gbpose->angular.x = vel_13.angular.x;
+      gbpose->angular.y = vel_13.angular.y;
+      gbpose->angular.z = vel_13.angular.z;
       //return gbpose;
       break;
   }

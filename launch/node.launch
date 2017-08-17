@@ -1,0 +1,5 @@
+<launch>
+<node name="node1" pkg="strategy" type="strategy_node" output="screen" launch-prefix="xterm -e" />
+<node name="node2" pkg="strategy" type="controls" args="0.087" output="screen" launch-prefix="xterm -e" />
+<node name="node3" pkg="strategy" type="groundbot_node" output="screen" launch-prefix="xterm -e" />
+</launch>
