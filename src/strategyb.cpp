@@ -19,36 +19,25 @@ using namespace std::chrono;
 
 int strategyb::findBotNearestToQuad(int hover)
 {
-  ROS_INFO("inside findBotNearestToQuad\n");
   nav_msgs::Odometry position;
-  ClosestBot.clear();
   ros::Rate loop_rate(10);
-  ros::spinOnce();
-  loop_rate.sleep();
-  int i;
-  while(ClosestBot.empty())
+  do
   {
-    ROS_INFO("finding closest bot\n");
-    ClosestBot.clear();
-    for(i=4; i<=13; i++)
+    time_t t1, t2, timer;
+    while(ros::ok() && timer<=10)
     {
-      ros::Rate loop_rate(10);
+      time(&t1);
       ros::spinOnce();
-      loop_rate.sleep();
-      retrieve_pose(i, &position);
-      if(abs(MAVpose.pose.pose.position.x - position.pose.pose.position.x)<=5 && abs(MAVpose.pose.pose.position.y - position.pose.pose.position.y)<=2)
+      retrieve_pose(&position);
+      if(position.header.seq!=sequence)
       {
-        double distance = sqrt(pow(MAVpose.pose.pose.position.x - position.pose.pose.position.x,2) - pow(MAVpose.pose.pose.position.y - position.pose.pose.position.y,2));
-        ClosestBot.insert(make_pair(distance, i));
+        sequence = position.header.seq;
+        return 4;
       }
+      timer = time(&t2) - t1;
     }
-    if(hover==0)
-      break;
-  }
-  if(ClosestBot.empty())
-    return 0;
-  else
-    return ((*ClosestBot.begin()).second);
+  }while(ros::ok() && hover==1);
+  return 0;
 }
 
 void strategyb::initialHerd()
@@ -59,10 +48,7 @@ void strategyb::initialHerd()
   ros::spinOnce();
 
   while(ros::ok() && !(mvpose.reached=='y'))
-  {
-  	//ROS_INFO("checking for y\n");
   	ros::spinOnce();
-  }
 
   int ID = findBotNearestToQuad(1);
 
@@ -96,7 +82,7 @@ void strategyb::greedy()
       	ros::spinOnce();
       *frameX = -7.5;
       *frameY = 9;
-      thresx = 5;
+      thresx = 2.5;
       thresy = -1;
     }
     firstrun = false;
@@ -136,22 +122,22 @@ int strategyb::removeTheLockedBot(int ID)
   while(ros::ok() && removed==0)
   {
     ros::Rate loop_rate(10);
-    geometry_msgs::Twist vel;
+    nav_msgs::Odometry vel;
 
     sendQuad(ID, -1, 'n', 0, 0, 0);
     while(mvpose.reached!='n')
       ros::spinOnce();
 
     ros::spinOnce();
-    retrieve_vel(ID, &vel);
+    retrieve_pose(&vel);
 
-    if(fabs(vel.linear.x)<=0.1 && fabs(vel.linear.y)<=0.1 && fabs(vel.angular.z)>=0.01)
+    if(fabs(vel.twist.twist.linear.x)<=0.1 && fabs(vel.twist.twist.linear.y)<=0.1)
     {
-      while(fabs(vel.angular.z)<=0.01 && fabs(vel.linear.x)>=0.1 && fabs(vel.linear.y)>=0.1)
+      while(fabs(vel.twist.twist.linear.x)<=0.01 && fabs(vel.twist.twist.linear.y)>=0.01)
       {
         ROS_INFO("Rotating\n");
         ros::spinOnce();
-        retrieve_vel(ID, &vel);
+        retrieve_pose(&vel);
       }
       whereToTurn(ID);
     }
@@ -166,8 +152,8 @@ int strategyb::isOutsideGreen(int ID)
   ClosestBot.clear();
   ros::Rate loop_rate(10);
   ros::spinOnce();
-  retrieve_pose(ID, &position);
-  if(position.pose.pose.position.y < 10)
+  retrieve_pose(&position);
+  if(position.pose.pose.position.y < 10 && position.pose.pose.position.y > -10 && position.pose.pose.position.x < 10 && position.pose.pose.position.x > -10)
     return 0;
   else
     return 1;
@@ -273,7 +259,7 @@ void strategyb::whereToTurn(int ID)
   ros::spinOnce();
   loop_rate.sleep();
 
-  retrieve_pose(ID, &position);
+  retrieve_pose(&position);
 
   positionq.x = position.pose.pose.orientation.x;
   positionq.y = position.pose.pose.orientation.y;
@@ -297,8 +283,6 @@ void strategyb::whereToTurn(int ID)
       ros::spinOnce();
     while(ros::ok() && !(mvpose.reached=='y'))
       ros::spinOnce();
-
-    rotate(PI,publish_name,ID);
 	}
 	else if((yaw>theta2 && yaw<angle(theta2+PI/4)) || ( theta2*angle(theta2+PI/4)<0 && (yaw>theta2 || yaw<angle(theta2+PI/4))))
 	{
@@ -310,15 +294,11 @@ void strategyb::whereToTurn(int ID)
     while(ros::ok() && !(mvpose.reached=='y'))
       ros::spinOnce();
 
-    rotate(PI,publish_name,ID);
-
     sendQuad(ID, 1, 'n', 0, 0, 0);
     while(mvpose.reached!='n')
       ros::spinOnce();
     while(ros::ok() && !(mvpose.reached=='y'))
       ros::spinOnce();
-
-  	rotate(PI/4,publish_name,ID);
 	}
 	else if(yaw>=angle(theta2 + PI/4) && yaw<=angle(theta2 + PI/2) || ( angle(theta2+PI/4)*angle(theta2+PI/2)<0 && (yaw>angle(theta1+PI/4) || yaw<angle(theta2+PI/2))))
 	{
@@ -330,15 +310,11 @@ void strategyb::whereToTurn(int ID)
     while(ros::ok() && !(mvpose.reached=='y'))
       ros::spinOnce();
 
-    rotate(PI/4,publish_name,ID);
-
     sendQuad(ID, 1, 'n', 0, 0, 0);
     while(mvpose.reached!='n')
       ros::spinOnce();
     while(ros::ok() && !(mvpose.reached=='y'))
       ros::spinOnce();
-
-    rotate(PI/4,publish_name,ID);
 	}
 	else if(yaw>=angle(theta2+PI) && yaw<=angle(theta2+PI+PI/4) || (angle(theta2+PI)*angle(theta2+PI+PI/4) && (yaw>=angle(theta2+PI) && yaw<=angle(theta2+PI+PI/4))))
 	{
@@ -349,8 +325,6 @@ void strategyb::whereToTurn(int ID)
       ros::spinOnce();
     while(ros::ok() && !(mvpose.reached=='y'))
       ros::spinOnce();
-
-    rotate(PI/4,publish_name,ID);
 	}
 }
 
@@ -361,56 +335,6 @@ float strategyb::angle(float ang){
     return angle(ang-2*PI);
   else if(ang<-PI)
     return angle(ang+2*PI);
-}
-
-void strategyb::rotate (double relative_angle, char publish_name[40], int ID)
-{
-  ROS_INFO("ROTATING\n");
-	geometry_msgs::Twist vel_msg;
-  nav_msgs::Odometry temp;
-  qt q;
-  double Yaw,Pitch,Roll,yaw_i,pitch_i,roll_i;
-  Yaw=Pitch=Roll= 0.0;
-  publi = n.advertise<geometry_msgs::Twist>(publish_name,1000);
-  //set a random linear velocity in the x-axis
-	vel_msg.linear.x =0;
-  vel_msg.linear.y =0;
-  vel_msg.linear.z =0;
-  //set a random angular velocity in the y-axis
-  vel_msg.angular.x = 0;
-  vel_msg.angular.y = 0;
-  vel_msg.angular.z =-abs(angular_speed);
-
-  ros::Rate loop_rate(100);
-  ros::spinOnce();
-  retrieve_pose(ID, &temp);
-  loop_rate.sleep();
-
-  q.x = temp.pose.pose.orientation.x;
-  q.y = temp.pose.pose.orientation.y;
-  q.z = temp.pose.pose.orientation.z;
-  q.w = temp.pose.pose.orientation.w;
-
-  GetEulerAngles(q, &yaw_i, &pitch_i, &roll_i);
-
-  while(1)
-  {
-    //ROS_INFO("STILL ROTATING\n");
-    ros::spinOnce();
-    retrieve_pose(ID, &temp);
-    loop_rate.sleep();
-    qt q;
-    q.x = temp.pose.pose.orientation.x;
-    q.y = temp.pose.pose.orientation.y;
-    q.z = temp.pose.pose.orientation.z;
-    q.w = temp.pose.pose.orientation.w;
-    GetEulerAngles(q, &Yaw, &Pitch, &Roll);
-    publi.publish(vel_msg);
-    if(fabs(angle(Yaw) - angle(yaw_i+relative_angle)) <= 0.1)
-  	 break;
-   }
- vel_msg.angular.z = 0;
- publi.publish(vel_msg);
 }
 
 void strategyb::GetEulerAngles(qt q, double* yaw, double* pitch, double* roll)
@@ -445,247 +369,22 @@ void strategyb::GetEulerAngles(qt q, double* yaw, double* pitch, double* roll)
      }
  }
 
-void strategyb::groundbot4Callback(const nav_msgs::Odometry::ConstPtr& msg)
+void strategyb::groundbotCallback(const nav_msgs::Odometry::ConstPtr& msg)
 {
-  gb4pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb4pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb4pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb4pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb4pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb4pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb4pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb4pose.twist.twist.linear.y = msg->twist.twist.linear.y;
+  bot_pose.pose.pose.position.x = msg->pose.pose.position.x;
+  bot_pose.pose.pose.position.y = msg->pose.pose.position.y;
+  bot_pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
+  bot_pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
+  bot_pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
+  bot_pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
+  bot_pose.twist.twist.linear.x = msg->twist.twist.linear.x;
+  bot_pose.twist.twist.linear.y = msg->twist.twist.linear.y;
   return;
-}
-
-void strategyb::groundbot5Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb5pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb5pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb5pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb5pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb5pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb5pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb5pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb5pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void strategyb::groundbot6Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb6pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb6pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb6pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb6pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb6pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb6pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb6pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb6pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void strategyb::groundbot7Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb7pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb7pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb7pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb7pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb7pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb7pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb7pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb7pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void strategyb::groundbot8Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb8pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb8pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb8pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb8pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb8pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb8pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb8pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb8pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void strategyb::groundbot9Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb9pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb9pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb9pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb9pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb9pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb9pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb9pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb9pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void strategyb::groundbot10Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb10pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb10pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb10pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb10pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb10pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb10pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb10pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb10pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void strategyb::groundbot11Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb11pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb11pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb11pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb11pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb11pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb11pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb11pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb11pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void strategyb::groundbot12Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb12pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb12pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb12pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb12pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb12pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb12pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb12pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb12pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void strategyb::groundbot13Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb13pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb13pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb13pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb13pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb13pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb13pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb13pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb13pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void strategyb::groundbot_vel_4Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_4.linear.x = msg->linear.x;
-  vel_4.linear.y = msg->linear.y;
-  vel_4.linear.z = msg->linear.z;
-  vel_4.angular.x = msg->angular.x;
-  vel_4.angular.y = msg->angular.y;
-  vel_4.angular.z = msg->angular.z;
-}
-
-void strategyb::groundbot_vel_5Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_5.linear.x = msg->linear.x;
-  vel_5.linear.y = msg->linear.y;
-  vel_5.linear.z = msg->linear.z;
-  vel_5.angular.x = msg->angular.x;
-  vel_5.angular.y = msg->angular.y;
-  vel_5.angular.z = msg->angular.z;
-}
-
-void strategyb::groundbot_vel_6Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_6.linear.x = msg->linear.x;
-  vel_6.linear.y = msg->linear.y;
-  vel_6.linear.z = msg->linear.z;
-  vel_6.angular.x = msg->angular.x;
-  vel_6.angular.y = msg->angular.y;
-  vel_6.angular.z = msg->angular.z;
-}
-
-void strategyb::groundbot_vel_7Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_7.linear.x = msg->linear.x;
-  vel_7.linear.y = msg->linear.y;
-  vel_7.linear.z = msg->linear.z;
-  vel_7.angular.x = msg->angular.x;
-  vel_7.angular.y = msg->angular.y;
-  vel_7.angular.z = msg->angular.z;
-}
-
-void strategyb::groundbot_vel_8Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_8.linear.x = msg->linear.x;
-  vel_8.linear.y = msg->linear.y;
-  vel_8.linear.z = msg->linear.z;
-  vel_8.angular.x = msg->angular.x;
-  vel_8.angular.y = msg->angular.y;
-  vel_8.angular.z = msg->angular.z;
-}
-
-void strategyb::groundbot_vel_9Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_9.linear.x = msg->linear.x;
-  vel_9.linear.y = msg->linear.y;
-  vel_9.linear.z = msg->linear.z;
-  vel_9.angular.x = msg->angular.x;
-  vel_9.angular.y = msg->angular.y;
-  vel_9.angular.z = msg->angular.z;
-}
-
-void strategyb::groundbot_vel_10Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_10.linear.x = msg->linear.x;
-  vel_10.linear.y = msg->linear.y;
-  vel_10.linear.z = msg->linear.z;
-  vel_10.angular.x = msg->angular.x;
-  vel_10.angular.y = msg->angular.y;
-  vel_10.angular.z = msg->angular.z;
-}
-
-void strategyb::groundbot_vel_11Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_11.linear.x = msg->linear.x;
-  vel_11.linear.y = msg->linear.y;
-  vel_11.linear.z = msg->linear.z;
-  vel_11.angular.x = msg->angular.x;
-  vel_11.angular.y = msg->angular.y;
-  vel_11.angular.z = msg->angular.z;
-}
-
-void strategyb::groundbot_vel_12Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_12.linear.x = msg->linear.x;
-  vel_12.linear.y = msg->linear.y;
-  vel_12.linear.z = msg->linear.z;
-  vel_12.angular.x = msg->angular.x;
-  vel_12.angular.y = msg->angular.y;
-  vel_12.angular.z = msg->angular.z;
-}
-
-void strategyb::groundbot_vel_13Callback(const geometry_msgs::Twist::ConstPtr& msg)
-{
-  vel_13.linear.x = msg->linear.x;
-  vel_13.linear.y = msg->linear.y;
-  vel_13.linear.z = msg->linear.z;
-  vel_13.angular.x = msg->angular.x;
-  vel_13.angular.y = msg->angular.y;
-  vel_13.angular.z = msg->angular.z;
 }
 
 
 void strategyb::feedbackfn(const nav_msgs::Odometry::ConstPtr& odom_data)
 {
-  // MAVpose.pose.pose.position.x = odom_data->pose.pose.position.x;
-  // MAVpose.pose.pose.position.y = odom_data->pose.pose.position.y;
-  // MAVpose.pose.pose.orientation.x = odom_data->pose.pose.orientation.x;
-  // MAVpose.pose.pose.orientation.y = odom_data->pose.pose.orientation.y;
-  // MAVpose.pose.pose.orientation.z = odom_data->pose.pose.orientation.z;
-  // MAVpose.pose.pose.orientation.w = odom_data->pose.pose.orientation.w;
-  // MAVpose.twist.twist.linear.x = odom_data->twist.twist.linear.x;
-  // MAVpose.twist.twist.linear.y = odom_data->twist.twist.linear.y;
   MAVpose = *odom_data;
 }
 
@@ -695,252 +394,16 @@ void strategyb::nav_quad_callback(const strategy::navigate_quad::ConstPtr& msg)
 }
 
 
-void strategyb::retrieve_pose(int ID, nav_msgs::Odometry *gbpose)
+void strategyb::retrieve_pose(nav_msgs::Odometry *gbpose)
 {
-  switch(ID)
-  {
-    case 4:
-      gbpose->pose.pose.orientation.x = gb4pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb4pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb4pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb4pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb4pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb4pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb4pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb4pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb4pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb4pose.twist.twist.linear.z;
-      //return gbpose;
-      break;
-
-    case 5:
-      gbpose->pose.pose.orientation.x = gb5pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb5pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb5pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb5pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb5pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb5pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb5pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb5pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb5pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb5pose.twist.twist.linear.z;
-     // return gbpose;
-      break;
-
-    case 6:
-      gbpose->pose.pose.orientation.x = gb6pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb6pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb6pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb6pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb6pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb6pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb6pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb6pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb6pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb6pose.twist.twist.linear.z;
-     // return gbpose;
-      break;
-    case 7:
-      gbpose->pose.pose.orientation.x = gb7pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb7pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb7pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb7pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb7pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb7pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb7pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb7pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb7pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb7pose.twist.twist.linear.z;
-     // return gbpose;
-      break;
-
-    case 8:
-      gbpose->pose.pose.orientation.x = gb8pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb8pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb8pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb8pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb8pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb8pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb8pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb8pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb8pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb8pose.twist.twist.linear.z;
-     // return gbpose;
-      break;
-
-    case 9:
-      gbpose->pose.pose.orientation.x = gb9pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb9pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb9pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb9pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb9pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb9pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb9pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb9pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb9pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb9pose.twist.twist.linear.z;
-     // return gbpose;
-      break;
-
-    case 10:
-      gbpose->pose.pose.orientation.x = gb10pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb10pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb10pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb10pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb10pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb10pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb10pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb10pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb10pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb10pose.twist.twist.linear.z;
-      //return gbpose;
-      break;
-
-    case 11:
-      gbpose->pose.pose.orientation.x = gb11pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb11pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb11pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb11pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb11pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb11pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb11pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb11pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb11pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb11pose.twist.twist.linear.z;
-      //return gbpose;
-      break;
-
-    case 12:
-      gbpose->pose.pose.orientation.x = gb12pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb12pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb12pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb12pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb12pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb12pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb12pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb12pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb12pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb12pose.twist.twist.linear.z;
-      //return gbpose;
-      break;
-
-    case 13:
-      gbpose->pose.pose.orientation.x = gb13pose.pose.pose.orientation.x;
-      gbpose->pose.pose.orientation.y = gb13pose.pose.pose.orientation.y;
-      gbpose->pose.pose.orientation.z = gb13pose.pose.pose.orientation.z;
-      gbpose->pose.pose.orientation.w = gb13pose.pose.pose.orientation.w;
-      gbpose->pose.pose.position.x = gb13pose.pose.pose.position.x;
-      gbpose->pose.pose.position.y = gb13pose.pose.pose.position.y;
-      gbpose->pose.pose.position.z = gb13pose.pose.pose.position.z;
-      gbpose->twist.twist.linear.x = gb13pose.twist.twist.linear.x;
-      gbpose->twist.twist.linear.y = gb13pose.twist.twist.linear.y;
-      gbpose->twist.twist.linear.z = gb13pose.twist.twist.linear.z;
-      //return gbpose;
-      break;
-  }
-}
-
-void strategyb::retrieve_vel(int ID, geometry_msgs::Twist *gbpose)
-{
-  switch(ID)
-  {
-    case 4:
-      gbpose->linear.x = vel_4.linear.x;
-      gbpose->linear.x = vel_4.linear.y;
-      gbpose->linear.x = vel_4.linear.z;
-      gbpose->angular.x = vel_4.angular.x;
-      gbpose->angular.y = vel_4.angular.y;
-      gbpose->angular.z = vel_4.angular.z;
-      //return gbpose;
-      break;
-
-    case 5:
-      gbpose->linear.x = vel_5.linear.x;
-      gbpose->linear.x = vel_5.linear.y;
-      gbpose->linear.x = vel_5.linear.z;
-      gbpose->angular.x = vel_5.angular.x;
-      gbpose->angular.y = vel_5.angular.y;
-      gbpose->angular.z = vel_5.angular.z;
-     // return gbpose;
-      break;
-
-    case 6:
-      gbpose->linear.x = vel_6.linear.x;
-      gbpose->linear.x = vel_6.linear.y;
-      gbpose->linear.x = vel_6.linear.z;
-      gbpose->angular.x = vel_6.angular.x;
-      gbpose->angular.y = vel_6.angular.y;
-      gbpose->angular.z = vel_6.angular.z;
-     // return gbpose;
-      break;
-    case 7:
-      gbpose->linear.x = vel_7.linear.x;
-      gbpose->linear.x = vel_7.linear.y;
-      gbpose->linear.x = vel_7.linear.z;
-      gbpose->angular.x = vel_7.angular.x;
-      gbpose->angular.y = vel_7.angular.y;
-      gbpose->angular.z = vel_7.angular.z;
-     // return gbpose;
-      break;
-
-    case 8:
-      gbpose->linear.x = vel_8.linear.x;
-      gbpose->linear.x = vel_8.linear.y;
-      gbpose->linear.x = vel_8.linear.z;
-      gbpose->angular.x = vel_8.angular.x;
-      gbpose->angular.y = vel_8.angular.y;
-      gbpose->angular.z = vel_8.angular.z;
-     // return gbpose;
-      break;
-
-    case 9:
-      gbpose->linear.x = vel_9.linear.x;
-      gbpose->linear.x = vel_9.linear.y;
-      gbpose->linear.x = vel_9.linear.z;
-      gbpose->angular.x = vel_9.angular.x;
-      gbpose->angular.y = vel_9.angular.y;
-      gbpose->angular.z = vel_9.angular.z;
-     // return gbpose;
-      break;
-
-    case 10:
-      gbpose->linear.x = vel_10.linear.x;
-      gbpose->linear.x = vel_10.linear.y;
-      gbpose->linear.x = vel_10.linear.z;
-      gbpose->angular.x = vel_10.angular.x;
-      gbpose->angular.y = vel_10.angular.y;
-      gbpose->angular.z = vel_10.angular.z;
-      //return gbpose;
-      break;
-
-    case 11:
-      gbpose->linear.x = vel_11.linear.x;
-      gbpose->linear.x = vel_11.linear.y;
-      gbpose->linear.x = vel_11.linear.z;
-      gbpose->angular.x = vel_11.angular.x;
-      gbpose->angular.y = vel_11.angular.y;
-      gbpose->angular.z = vel_11.angular.z;
-      //return gbpose;
-      break;
-
-    case 12:
-      gbpose->linear.x = vel_12.linear.x;
-      gbpose->linear.x = vel_12.linear.y;
-      gbpose->linear.x = vel_12.linear.z;
-      gbpose->angular.x = vel_12.angular.x;
-      gbpose->angular.y = vel_12.angular.y;
-      gbpose->angular.z = vel_12.angular.z;
-      //return gbpose;
-      break;
-
-    case 13:
-      gbpose->linear.x = vel_13.linear.x;
-      gbpose->linear.x = vel_13.linear.y;
-      gbpose->linear.x = vel_13.linear.z;
-      gbpose->angular.x = vel_13.angular.x;
-      gbpose->angular.y = vel_13.angular.y;
-      gbpose->angular.z = vel_13.angular.z;
-      //return gbpose;
-      break;
-  }
+  gbpose->pose.pose.orientation.x = bot_pose.pose.pose.orientation.x;
+  gbpose->pose.pose.orientation.y = bot_pose.pose.pose.orientation.y;
+  gbpose->pose.pose.orientation.z = bot_pose.pose.pose.orientation.z;
+  gbpose->pose.pose.orientation.w = bot_pose.pose.pose.orientation.w;
+  gbpose->pose.pose.position.x = bot_pose.pose.pose.position.x;
+  gbpose->pose.pose.position.y = bot_pose.pose.pose.position.y;
+  gbpose->pose.pose.position.z = bot_pose.pose.pose.position.z;
+  gbpose->twist.twist.linear.x = bot_pose.twist.twist.linear.x;
+  gbpose->twist.twist.linear.y = bot_pose.twist.twist.linear.y;
+  gbpose->twist.twist.linear.z = bot_pose.twist.twist.linear.z;
 }

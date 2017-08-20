@@ -188,17 +188,11 @@ int main(int argc, char *argv[])
 	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + ((t0)*(gbpose.twist.twist.linear.x) + 0.5)*(cos(theta));
 	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  ((t0)*(gbpose.twist.twist.linear.x)+0.5)*(sin(theta));
 	    }
-	    else if(QuadStatus.mode == 1 )
+	    else if(QuadStatus.mode == 1)
 	    {
 	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + (t0)*(gbpose.twist.twist.linear.x)*(cos(theta));
 	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  (t0)*(gbpose.twist.twist.linear.x)*(sin(theta));
 	    }
-
-    else if(QuadStatus.mode == (-1))
-    {
-      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x;
-      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y;
-    }
 
 	    ErrorLin = GetErrorLin(MAVdest,MAVpose);                       //error between expected and actual position of quad
 	    if(ErrorLin > Eps)
@@ -215,7 +209,7 @@ int main(int argc, char *argv[])
 			    local_pos_pub.publish(pose);
 		    }
 	    }
-	    else if (ErrorLin <= Eps && QuadStatus.mode != (-1))
+	    else if (ErrorLin <= Eps)
 	    {
 	      if(count!=0)
 	      {
@@ -501,12 +495,12 @@ void GetEulerAngles(Quaternionm q, double* yaw, double* pitch, double* roll)
    void follow()
    {
      double z;
-    pose.pose.position.x = MAVdest.pose.pose.position.x;
+  /*  pose.pose.position.x = MAVdest.pose.pose.position.x;
     pose.pose.position.y = MAVdest.pose.pose.position.y;
-    pose.pose.position.z = Default;
+    pose.pose.position.z = Default;*/
      //ROS_INFO("%f \t %f \t palak ", ErrorLin, MAVpose.pose.pose.position.z );
 
-    obs_theta= atan2((MAVpose.pose.pose.position.y-(obspose.pose.pose.position.y)),(MAVpose.pose.pose.position.x-(obspose.pose.pose.position.x)));
+     obs_theta= atan2((MAVpose.pose.pose.position.y-(obspose.pose.pose.position.y)),(MAVpose.pose.pose.position.x-(obspose.pose.pose.position.x)));
      set_theta= atan2(MAVdest.pose.pose.position.y-(obspose.pose.pose.position.y),MAVdest.pose.pose.position.x-(obspose.pose.pose.position.x));
 
      ErrorLin_ObsMAV=GetErrorLin(obspose,MAVpose);
@@ -553,6 +547,7 @@ void GetEulerAngles(Quaternionm q, double* yaw, double* pitch, double* roll)
      /*local_pos_pub.publish(pose1);*/
      status=2;
      }
+
    }
 
    void descent()
