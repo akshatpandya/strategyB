@@ -72,6 +72,7 @@ bool land(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
   ROS_INFO("service call request data %d \n", req.data);
   if(req.data == true)
   e_land = true;
+
   ROS_INFO("e_land %d\n",e_land);
   return true;
 }
@@ -275,56 +276,54 @@ int main(int argc, char *argv[])
 
       if(QuadStatus.reached=='y')
       {
-      ROS_INFO("publishing reached\n \n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-      Status_pub.publish(QuadStatus);
-      flag=0;
+        ROS_INFO("publishing reached\n \n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
+        Status_pub.publish(QuadStatus);
+        flag=0;
       }
       while(QuadStatus.reached=='y'&&ros::ok())
       {
-      //ROS_INFO("holding position");
-      pose.pose.position.x = MAVpose.pose.pose.position.x;
-      pose.pose.position.y = MAVpose.pose.pose.position.y;
-      pose.pose.position.z = Default;
-      local_pos_pub.publish(pose);
-      if(e_land == true)
-      {
-         ROS_INFO("service called\n");
-         mavros_msgs::CommandTOL srv_land;
-         srv_land.request.altitude = 0;
-         srv_land.request.min_pitch = 0;
+        //ROS_INFO("holding position");
+        pose.pose.position.x = MAVpose.pose.pose.position.x;
+        pose.pose.position.y = MAVpose.pose.pose.position.y;
+        pose.pose.position.z = Default;
+        local_pos_pub.publish(pose);
+        if(e_land == true)
+        {
+          ROS_INFO("service called\n");
+          mavros_msgs::CommandTOL srv_land;
+          srv_land.request.altitude = 0;
+          srv_land.request.min_pitch = 0;
 
-         if(land_cl.call(srv_land))
-         {
-           ROS_INFO("srv_land send ok %d", srv_land.response.success);
-         }
-         else
-         {
-           ROS_ERROR("Failed Land");
-         }
-       }
-       }
-     }
-    else
-    {
-      ROS_INFO("service called\n");
-      mavros_msgs::CommandTOL srv_land;
-      srv_land.request.altitude = 0;
-      srv_land.request.min_pitch = 0;
-
-      if(land_cl.call(srv_land))
-      {
-        ROS_INFO("srv_land send ok %d", srv_land.response.success);
-      }
-      else
-      {
-        ROS_ERROR("Failed Land");
+          if(land_cl.call(srv_land))
+          ROS_INFO("srv_land send ok %d", srv_land.response.success);
+          else
+          ROS_ERROR("Failed Land");
+        }
+        ros::spinOnce();
+        rate.sleep();
       }
     }
-    ros::spinOnce();
-    rate.sleep();
-    ROS_INFO("e_land %d\n",e_land);
+     else
+     {
+       ROS_INFO("service called\n");
+       mavros_msgs::CommandTOL srv_land;
+       srv_land.request.altitude = 0;
+       srv_land.request.min_pitch = 0;
+
+       if(land_cl.call(srv_land))
+       {
+         ROS_INFO("srv_land send ok %d", srv_land.response.success);
+       }
+       else
+       {
+         ROS_ERROR("Failed Land");
+       }
+     }
+     ros::spinOnce();
+     rate.sleep();
+     ROS_INFO("e_land %d\n",e_land);
   }
-  return (0);
+   return (0);
 }
 
 
