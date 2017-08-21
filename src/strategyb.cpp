@@ -66,7 +66,7 @@ void strategyb::greedy()
     if(firstrun==true)
     {
       sendQuad(1, 0, 'n', -7.5, 1, 2);
-      while(mvpose.reached!='n')
+      while(ros::ok() && mvpose.reached!='n')
         ros::spinOnce();
       while(ros::ok() && !(mvpose.reached=='y'))
       	ros::spinOnce();

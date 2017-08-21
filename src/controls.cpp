@@ -22,6 +22,8 @@
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
 #include "strategy/navigate_quad.h" //message type for strategy with groundbot/tap topic
+#include <std_srvs/SetBool.h>
+#include <mavros_msgs/CommandTOL.h>
 
 #define step 0.1              // step for changing altitude gradually
 #define Eps 0.2             // range for error
@@ -30,28 +32,18 @@
 #define GBHeight 0.2
 #define Epsz 0.1
 
-float t0 = 3;                                                  //descent time
+float t0 = 3;                                                   //descent time
 //float Eps;                                                    //Error margin
-double theta;                                                  //orientation of gb wrt X-axis
-float ErrorLin;
+double theta;                                                   //orientation of gb wrt X-axis
+float ErrorLin;                                                 //Get linear error
 float ErrorLin_ObsMAV,ErrorQuad,ErrorObs ;
 float obs_theta;
 float set_theta;
 strategy::navigate_quad QuadStatus;
 nav_msgs::Odometry obspose;
-nav_msgs::Odometry gbpose;                                      //Get linear error
-nav_msgs::Odometry gb4pose;                                     //position of ground bot
-nav_msgs::Odometry gb5pose;
-nav_msgs::Odometry gb6pose;
-nav_msgs::Odometry gb7pose;
-nav_msgs::Odometry gb8pose;
-nav_msgs::Odometry gb9pose;
-nav_msgs::Odometry gb10pose;
-nav_msgs::Odometry gb11pose;
-nav_msgs::Odometry gb12pose;
-nav_msgs::Odometry gb13pose;
-nav_msgs::Odometry MAVpose;                                        //position of quad
-nav_msgs::Odometry MAVdest;                                         //quad destination
+nav_msgs::Odometry gbpose;
+nav_msgs::Odometry MAVpose;                                      //position of quad
+nav_msgs::Odometry MAVdest;                                      //quad destination
 geometry_msgs::PoseStamped pose;
 geometry_msgs::PoseStamped pose0;
 geometry_msgs::PoseStamped pose1;
@@ -64,6 +56,8 @@ int count = 0;
 int status;
 int flag_reached = 0;
 double yaw, pitch, roll;
+int i;
+bool e_land = false;
 
 
 mavros_msgs::State current_state;
@@ -72,23 +66,24 @@ void state_cb(const mavros_msgs::State::ConstPtr& msg)
     current_state = *msg;
 }
 
+bool land(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
+{
+  ROS_INFO("in function land");
+  ROS_INFO("service call request data %d \n", req.data);
+  if(req.data == true)
+  e_land = true;
+  ROS_INFO("e_land %d\n",e_land);
+  return true;
+}
+
 
 struct Quaternionm
 {
-    double w, x, y, z;
+  double w, x, y, z;
 };
 
 
-void groundbot4Callback(const nav_msgs::Odometry::ConstPtr& msg);
-void groundbot5Callback(const nav_msgs::Odometry::ConstPtr& msg);
-void groundbot6Callback(const nav_msgs::Odometry::ConstPtr& msg);
-void groundbot7Callback(const nav_msgs::Odometry::ConstPtr& msg);
-void groundbot8Callback(const nav_msgs::Odometry::ConstPtr& msg);
-void groundbot9Callback(const nav_msgs::Odometry::ConstPtr& msg);
-void groundbot10Callback(const nav_msgs::Odometry::ConstPtr& msg);
-void groundbot11Callback(const nav_msgs::Odometry::ConstPtr& msg);
-void groundbot12Callback(const nav_msgs::Odometry::ConstPtr& msg);
-void groundbot13Callback(const nav_msgs::Odometry::ConstPtr& msg);
+void groundbotCallback(const nav_msgs::Odometry::ConstPtr& msg);
 void feedbackfn(const nav_msgs::Odometry::ConstPtr& odom_data);
 void obsCallback(const nav_msgs::Odometry::ConstPtr& msg);
 void StatusCallback(const strategy::navigate_quad::ConstPtr& msg);
@@ -100,6 +95,8 @@ void descent();
 void ascent();
 double kp;
 
+
+
 int main(int argc, char *argv[])
 {
   ros::init(argc,argv,"controls");
@@ -107,194 +104,229 @@ int main(int argc, char *argv[])
   kp=std::atof(argv[1]);//0.08
 
   ros::NodeHandle n;
+
+  ros::ServiceClient arming_client = n.serviceClient<mavros_msgs::CommandBool>("mavros/cmd/arming");
+  ros::ServiceClient set_mode_client = n.serviceClient<mavros_msgs::SetMode>("mavros/set_mode");
+  ros::ServiceClient land_cl = n.serviceClient<mavros_msgs::CommandTOL>("/mavros/cmd/land");
+  ros::ServiceServer emergency_land = n.advertiseService("emergency_land", land); //check within "" !!
   ros::Subscriber imu_yaw = n.subscribe("mavros/local_position/odom", 10, feedbackfn);
-  ros::Subscriber gbpose_sub_4 = n.subscribe("/robot4/odom", 100, groundbot4Callback); // subscriber to get ground bot position
-  ros::Subscriber gbpose_sub_5 = n.subscribe("/robot5/odom", 100, groundbot5Callback); // subscriber to get ground bot position
-  ros::Subscriber gbpose_sub_6 = n.subscribe("/robot6/odom", 100, groundbot6Callback); // subscriber to get ground bot position
-  ros::Subscriber gbpose_sub_7 = n.subscribe("/robot7/odom", 100, groundbot7Callback); // subscriber to get ground bot position
-  ros::Subscriber gbpose_sub_8 = n.subscribe("/robot8/odom", 100, groundbot8Callback); // subscriber to get ground bot position
-  ros::Subscriber gbpose_sub_9 = n.subscribe("/robot9/odom", 100, groundbot9Callback); // subscriber to get ground bot position
-  ros::Subscriber gbpose_sub_10 = n.subscribe("/robot10/odom", 100, groundbot10Callback); // subscriber to get ground bot position
-  ros::Subscriber gbpose_sub_11 = n.subscribe("/robot11/odom", 100, groundbot11Callback); // subscriber to get ground bot position
-  ros::Subscriber gbpose_sub_12 = n.subscribe("/robot12/odom", 100, groundbot12Callback); // subscriber to get ground bot position
-  ros::Subscriber gbpose_sub_13 = n.subscribe("/robot13/odom", 100, groundbot13Callback); // subscriber to get ground bot position
+  ros::Subscriber gbpose_sub = n.subscribe("/robot/odom", 100, groundbotCallback); // subscriber to get ground bot position
   ros::Subscriber obspose_sub = n.subscribe("/robot3/odom", 100, obsCallback);
   ros::Subscriber Status_sub= n.subscribe("groundbot/tap", 10, StatusCallback);
   ros::Publisher Status_pub = n.advertise<strategy::navigate_quad>("groundbot/tap", 10);
   ros::Subscriber state_sub = n.subscribe<mavros_msgs::State>("mavros/state", 10, state_cb);
   ros::Publisher local_pos_pub = n.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
-  ros::ServiceClient arming_client = n.serviceClient<mavros_msgs::CommandBool>("mavros/cmd/arming");
-  ros::ServiceClient set_mode_client = n.serviceClient<mavros_msgs::SetMode>("mavros/set_mode");
 
   ros::Rate rate(20.0);
 
   // wait for FCU connection
   while(ros::ok() && current_state.connected)
   {
-	  ros::spinOnce();
-	  rate.sleep();
+    ros::spinOnce();
+    rate.sleep();
   }
 
 
-    geometry_msgs::PoseStamped pose0;
-    pose0.pose.position.x = 0;
-    pose0.pose.position.y = 0;
-    pose0.pose.position.z = Default;
+  geometry_msgs::PoseStamped pose0;
+  pose0.pose.position.x = 0;
+  pose0.pose.position.y = 0;
+  pose0.pose.position.z = Default;
 
-    //send a few setpoints before starting
-    for(int i = 100; ros::ok() && i > 0; --i)
-    {
-        local_pos_pub.publish(pose0);
-        ros::spinOnce();
-        rate.sleep();
-    }
+  for(i=1;i<11;i++)
+  {
+    ros::spinOnce();
+    rate.sleep();
+  }
 
-    mavros_msgs::SetMode offb_set_mode;
-    offb_set_mode.request.custom_mode = "OFFBOARD";
+  //send a few setpoints before starting
+  for(int i = 100; ros::ok() && i > 0; --i)
+  {
+    local_pos_pub.publish(pose0);
+    ros::spinOnce();
+    rate.sleep();
+  }
 
-    mavros_msgs::CommandBool arm_cmd;
-    arm_cmd.request.value = true;
 
-    ros::Time last_request = ros::Time::now();
+
+  mavros_msgs::SetMode offb_set_mode;
+  offb_set_mode.request.custom_mode = "OFFBOARD";
+
+  mavros_msgs::CommandBool arm_cmd;
+  arm_cmd.request.value = true;
+
+  ros::Time last_request = ros::Time::now();
 
 
   while(ros::ok())
   {
-    if( current_state.mode != "OFFBOARD" &&   (ros::Time::now() - last_request > ros::Duration(5.0)))
+    if(e_land == false)
     {
+      if( current_state.mode != "OFFBOARD" &&   (ros::Time::now() - last_request > ros::Duration(5.0)))
+      {
         if( set_mode_client.call(offb_set_mode) && offb_set_mode.response.success)
-            {
-            ROS_INFO("Offboard enabled");
-            }
+        {
+          ROS_INFO("Offboard enabled");
+        }
         last_request = ros::Time::now();
-    }
-    else
-    {
+      }
+      else
+      {
         if( !current_state.armed && (ros::Time::now() - last_request > ros::Duration(5.0)))
         {
-	        if( arming_client.call(arm_cmd) && arm_cmd.response.success)
-	        	ROS_INFO("Vehicle armed");
-	        last_request = ros::Time::now();
+          if( arming_client.call(arm_cmd) && arm_cmd.response.success)
+          ROS_INFO("Vehicle armed");
+          last_request = ros::Time::now();
         }
+      }
+
+      if(QuadStatus.id>3 && QuadStatus.id<14 && QuadStatus.reached!='y')
+      {
+        theta = GetTheta();
+        if(QuadStatus.mode == 0)
+        {
+          MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + ((t0)*(gbpose.twist.twist.linear.x) + 0.5)*(cos(theta));
+          MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  ((t0)*(gbpose.twist.twist.linear.x) + 0.5)*(sin(theta));
+        }
+        else if(QuadStatus.mode == 1 )
+        {
+          MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + (t0)*(gbpose.twist.twist.linear.x)*(cos(theta));
+          MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  (t0)*(gbpose.twist.twist.linear.x)*(sin(theta));
+        }
+        else if (QuadStatus.mode == (-1))
+        {
+          MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x;
+          MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y;
+        }
+
+        ErrorLin = GetErrorLin(MAVdest,MAVpose);                       //error between expected and actual position of quad
+        if(ErrorLin > Eps)
+        {
+          if(MAVpose.pose.pose.position.z-Default<=Epsz)
+          {
+            follow();
+            if(status==1)
+            local_pos_pub.publish(pose1);
+            else if(status==2)
+            local_pos_pub.publish(pose2);
+          }
+          else
+          {
+          ascent();
+          local_pos_pub.publish(pose);
+          }
+        }
+        else if (ErrorLin <= Eps && QuadStatus.mode != (-1))
+        {
+        if(count!=0)
+        {
+          //ROS_INFO("ok");
+          if(flag == 0)
+          {
+            if(ErrorLin_ObsMAV <= 2)
+            {
+              pose3.pose.position.x = MAVpose.pose.pose.position.x;
+              pose3.pose.position.y = MAVpose.pose.pose.position.y;
+              pose3.pose.position.z = Default;
+              local_pos_pub.publish(pose3);
+            }
+            else
+            {
+              descent();
+              local_pos_pub.publish(pose);
+            }
+          }
+          //printf("flag=%d\n", flag);
+          if (fabs(MAVpose.pose.pose.position.z-GBHeight)<=Epsz)
+          {
+            ROS_INFO("YO\n YO\n YO\n YO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\n");
+            ascent();
+            local_pos_pub.publish(pose);
+            flag = 1;
+          }
+          else if(flag ==1)
+          {   ROS_INFO("avoiding RTL\n");
+              pose.pose.position.x = MAVpose.pose.pose.position.x;
+              pose.pose.position.y = MAVpose.pose.pose.position.y;
+              pose.pose.position.z = Default;
+              local_pos_pub.publish(pose);
+              QuadStatus.reached = 'y';
+              //Status_pub.publish(QuadStatus);
+          }
+        }
+
+        count ++;
+        }
+      }
+      else if(QuadStatus.id==1 && QuadStatus.reached!='y')
+      {
+      //ROS_INFO("ERROR ====== %f \n", sqrt(pow(MAVpose.pose.pose.position.x - QuadStatus.x, 2) + pow(MAVpose.pose.pose.position.y - QuadStatus.y, 2)));
+      //ROS_INFO("reaching x,y,z QuadStatus.id %d\n ", QuadStatus.id);
+      pose.pose.position.x = QuadStatus.x;
+      pose.pose.position.y = QuadStatus.y;
+      pose.pose.position.z = QuadStatus.z;
+      local_pos_pub.publish(pose);
+      }
+
+      if(sqrt(pow(MAVpose.pose.pose.position.x - QuadStatus.x, 2) + pow(MAVpose.pose.pose.position.y - QuadStatus.y, 2)) <= 0.4 && QuadStatus.id==1)
+      {
+      QuadStatus.reached = 'y';
+      ROS_INFO("reached\n");
+      }
+
+      if(QuadStatus.reached=='y')
+      {
+      ROS_INFO("publishing reached\n \n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
+      Status_pub.publish(QuadStatus);
+      flag=0;
+      }
+      while(QuadStatus.reached=='y'&&ros::ok())
+      {
+      //ROS_INFO("holding position");
+      pose.pose.position.x = MAVpose.pose.pose.position.x;
+      pose.pose.position.y = MAVpose.pose.pose.position.y;
+      pose.pose.position.z = Default;
+      local_pos_pub.publish(pose);
+      if(e_land == true)
+      {
+         ROS_INFO("service called\n");
+         mavros_msgs::CommandTOL srv_land;
+         srv_land.request.altitude = 0;
+         srv_land.request.min_pitch = 0;
+
+         if(land_cl.call(srv_land))
+         {
+           ROS_INFO("srv_land send ok %d", srv_land.response.success);
+         }
+         else
+         {
+           ROS_ERROR("Failed Land");
+         }
+       }
+       }
+     }
+    else
+    {
+      ROS_INFO("service called\n");
+      mavros_msgs::CommandTOL srv_land;
+      srv_land.request.altitude = 0;
+      srv_land.request.min_pitch = 0;
+
+      if(land_cl.call(srv_land))
+      {
+        ROS_INFO("srv_land send ok %d", srv_land.response.success);
+      }
+      else
+      {
+        ROS_ERROR("Failed Land");
+      }
     }
-
-
-
-    if(QuadStatus.id>3 && QuadStatus.id<14 && QuadStatus.reached!='y')
-	{
-	    theta = GetTheta();
-	    if(QuadStatus.mode == 0)
-	    {
-	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + ((t0)*(gbpose.twist.twist.linear.x) + 0.5)*(cos(theta));
-	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  ((t0)*(gbpose.twist.twist.linear.x)+0.5)*(sin(theta));
-	    }
-	    else if(QuadStatus.mode == 1)
-	    {
-	      MAVdest.pose.pose.position.x = gbpose.pose.pose.position.x + (t0)*(gbpose.twist.twist.linear.x)*(cos(theta));
-	      MAVdest.pose.pose.position.y = gbpose.pose.pose.position.y +  (t0)*(gbpose.twist.twist.linear.x)*(sin(theta));
-	    }
-
-	    ErrorLin = GetErrorLin(MAVdest,MAVpose);                       //error between expected and actual position of quad
-	    if(ErrorLin > Eps)
-	    {
-		    if(MAVpose.pose.pose.position.z-Default<=Epsz)
-		    {
-				follow();
-				if(status==1) local_pos_pub.publish(pose1);
-				else if(status==2) local_pos_pub.publish(pose2);
-		    }
-		    else
-		    {
-			    ascent();
-			    local_pos_pub.publish(pose);
-		    }
-	    }
-	    else if (ErrorLin <= Eps)
-	    {
-	      if(count!=0)
-	      {
-				//ROS_INFO("ok");
-				if(flag == 0)
-		      	{
-			      if(ErrorLin_ObsMAV <= 2)
-			      {
-			        pose3.pose.position.x = MAVpose.pose.pose.position.x;
-			        pose3.pose.position.y = MAVpose.pose.pose.position.y;
-			        pose3.pose.position.z = Default;
-			        local_pos_pub.publish(pose3);
-			      }
-			      else
-			      {
-				    descent();
-			      local_pos_pub.publish(pose);
-			      }
-		     	}
-		      	//printf("flag=%d\n", flag);
-		       if (fabs(MAVpose.pose.pose.position.z-GBHeight)<=Epsz)
-		       {
-					ROS_INFO("YO\n YO\n YO\n YO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\nYO\n");
-			      	ascent();
-			     	local_pos_pub.publish(pose);
-			     	flag = 1;
-		       }
-				else if(flag ==1)
-				{   ROS_INFO("avoiding RTL\n");
-				    pose.pose.position.x = MAVpose.pose.pose.position.x;
-				    pose.pose.position.y = MAVpose.pose.pose.position.y;
-				    pose.pose.position.z = Default;
-				    local_pos_pub.publish(pose);
-					  QuadStatus.reached = 'y';
-            //Status_pub.publish(QuadStatus);
-				}
-		   }
-
-		   count ++;
-	    }
-	}
-	else if(QuadStatus.id==1 && QuadStatus.reached!='y')
-	{
-		//ROS_INFO("ERROR ====== %f \n", sqrt(pow(MAVpose.pose.pose.position.x - QuadStatus.x, 2) + pow(MAVpose.pose.pose.position.y - QuadStatus.y, 2)));
-	    //ROS_INFO("reaching x,y,z QuadStatus.id %d\n ", QuadStatus.id);
-	    pose.pose.position.x = QuadStatus.x;
-	    pose.pose.position.y = QuadStatus.y;
-	    pose.pose.position.z = QuadStatus.z;
-	    local_pos_pub.publish(pose);
-	}
-
-	if(sqrt(pow(MAVpose.pose.pose.position.x - QuadStatus.x, 2) + pow(MAVpose.pose.pose.position.y - QuadStatus.y, 2)) <= 0.4 && QuadStatus.id==1)
-	{
-		QuadStatus.reached = 'y';
-		ROS_INFO("reached\n");
-	}
-	/*if(
-
-	if(flag_reached==1)
-	{
-		Status_pub.publish(QuadStatus);
-		flag_reached=0;
-	}*/
-	if(QuadStatus.reached=='y')
-	{
-		ROS_INFO("publishing reached\n \n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-		Status_pub.publish(QuadStatus);
-		flag=0;
-	}
-	while(QuadStatus.reached=='y'&&ros::ok())
-	{
-		//ROS_INFO("holding position");
-		pose.pose.position.x = MAVpose.pose.pose.position.x;
-    	pose.pose.position.y = MAVpose.pose.pose.position.y;
-    	pose.pose.position.z = Default;
-    	local_pos_pub.publish(pose);
-		  ros::spinOnce();
-	}
-	//ROS_INFO("flag %d\n", flag);
-
     ros::spinOnce();
-
+    rate.sleep();
+    ROS_INFO("e_land %d\n",e_land);
   }
   return (0);
 }
+
 
 void StatusCallback(const strategy::navigate_quad::ConstPtr& msg)
 {
@@ -307,135 +339,21 @@ QuadStatus.z = msg->z;
   return;
 }
 
-void groundbot4Callback(const nav_msgs::Odometry::ConstPtr& msg)
+void groundbotCallback(const nav_msgs::Odometry::ConstPtr& msg)
 {
-  gb4pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb4pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb4pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb4pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb4pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb4pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb4pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb4pose.twist.twist.linear.y = msg->twist.twist.linear.y;
+  gbpose.pose.pose.position.x = msg->pose.pose.position.x;
+  gbpose.pose.pose.position.y = msg->pose.pose.position.y;
+  gbpose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
+  gbpose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
+  gbpose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
+  gbpose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
+  gbpose.twist.twist.linear.x = msg->twist.twist.linear.x;
+  gbpose.twist.twist.linear.y = msg->twist.twist.linear.y;
+
+
   return;
 }
 
-void groundbot5Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb5pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb5pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb5pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb5pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb5pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb5pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb5pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb5pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void groundbot6Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb6pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb6pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb6pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb6pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb6pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb6pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb6pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb6pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void groundbot7Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb7pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb7pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb7pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb7pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb7pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb7pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb7pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb7pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void groundbot8Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb8pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb8pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb8pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb8pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb8pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb8pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb8pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb8pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void groundbot9Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb9pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb9pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb9pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb9pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb9pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb9pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb9pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb9pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void groundbot10Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb10pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb10pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb10pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb10pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb10pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb10pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb10pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb10pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void groundbot11Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb11pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb11pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb11pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb11pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb11pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb11pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb11pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb11pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void groundbot12Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb12pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb12pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb12pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb12pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb12pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb12pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb12pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb12pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
-
-void groundbot13Callback(const nav_msgs::Odometry::ConstPtr& msg)
-{
-  gb13pose.pose.pose.position.x = msg->pose.pose.position.x;
-  gb13pose.pose.pose.position.y = msg->pose.pose.position.y;
-  gb13pose.pose.pose.orientation.x = msg->pose.pose.orientation.x;
-  gb13pose.pose.pose.orientation.y = msg->pose.pose.orientation.y;
-  gb13pose.pose.pose.orientation.z = msg->pose.pose.orientation.z;
-  gb13pose.pose.pose.orientation.w = msg->pose.pose.orientation.w;
-  gb13pose.twist.twist.linear.x = msg->twist.twist.linear.x;
-  gb13pose.twist.twist.linear.y = msg->twist.twist.linear.y;
-  return;
-}
 
 void obsCallback(const nav_msgs::Odometry::ConstPtr& msg)
 {
@@ -523,10 +441,10 @@ void GetEulerAngles(Quaternionm q, double* yaw, double* pitch, double* roll)
            {
              z=kp*((set_theta - obs_theta)+6.28);
            }
- 	else
- 	{
-  	 z=kp*(set_theta - obs_theta);
- 	}
+  else
+  {
+     z=kp*(set_theta - obs_theta);
+  }
 
          obs_theta+=z;
 
@@ -540,7 +458,7 @@ void GetEulerAngles(Quaternionm q, double* yaw, double* pitch, double* roll)
 
      else
      {
-	ROS_INFO("%f ----- %f,%f  follow",ErrorLin_ObsMAV,(set_theta),(obs_theta));
+  ROS_INFO("%f ----- %f,%f  follow",ErrorLin_ObsMAV,(set_theta),(obs_theta));
      pose2.pose.position.x = MAVdest.pose.pose.position.x;
      pose2.pose.position.y = MAVdest.pose.pose.position.y;
      pose2.pose.position.z = Default;
@@ -565,7 +483,7 @@ void GetEulerAngles(Quaternionm q, double* yaw, double* pitch, double* roll)
   void ascent()
   {
     //destination.set_dest((MAVdest.pose.pose.position.y)*(-1),MAVdest.pose.pose.position.x,Default,0);
-     ROS_INFO("%f \t %f \t palak ascent", ErrorLin, MAVpose.pose.pose.position.z );
+     ROS_INFO("%f \t %f \t ascent", ErrorLin, MAVpose.pose.pose.position.z );
     pose.pose.position.x = MAVpose.pose.pose.position.x;
     pose.pose.position.y = MAVpose.pose.pose.position.y;
     pose.pose.position.z = Default;
@@ -577,157 +495,12 @@ void GetEulerAngles(Quaternionm q, double* yaw, double* pitch, double* roll)
   {
     Quaternionm myq;
 
-    if(QuadStatus.id == 4)
-    {
-     myq.x = gb4pose.pose.pose.orientation.x;
-     myq.y = gb4pose.pose.pose.orientation.y;
-     myq.z = gb4pose.pose.pose.orientation.z;
-     myq.w = gb4pose.pose.pose.orientation.w;
+     myq.x = gbpose.pose.pose.orientation.x;
+     myq.y = gbpose.pose.pose.orientation.y;
+     myq.z = gbpose.pose.pose.orientation.z;
+     myq.w = gbpose.pose.pose.orientation.w;
 
-     gbpose.pose.pose.position.x = gb4pose.pose.pose.position.x;
-     gbpose.pose.pose.position.y = gb4pose.pose.pose.position.y;
-     gbpose.pose.pose.position.z = gb4pose.pose.pose.position.z;
-     gbpose.twist.twist.linear.x = gb4pose.twist.twist.linear.x;
-     gbpose.twist.twist.linear.y = gb4pose.twist.twist.linear.y;
-     gbpose.twist.twist.linear.z = gb4pose.twist.twist.linear.z;
-    }
-
-    else if (QuadStatus.id == 5)
-    {
-      myq.x = gb5pose.pose.pose.orientation.x;
-      myq.y = gb5pose.pose.pose.orientation.y;
-      myq.z = gb5pose.pose.pose.orientation.z;
-      myq.w = gb5pose.pose.pose.orientation.w;
-
-      gbpose.pose.pose.position.x = gb5pose.pose.pose.position.x;
-      gbpose.pose.pose.position.y = gb5pose.pose.pose.position.y;
-      gbpose.pose.pose.position.z = gb5pose.pose.pose.position.z;
-      gbpose.twist.twist.linear.x = gb5pose.twist.twist.linear.x;
-      gbpose.twist.twist.linear.y = gb5pose.twist.twist.linear.y;
-      gbpose.twist.twist.linear.z = gb5pose.twist.twist.linear.z;
-    }
-
-    else if (QuadStatus.id == 6)
-    {
-      myq.x = gb6pose.pose.pose.orientation.x;
-      myq.y = gb6pose.pose.pose.orientation.y;
-      myq.z = gb6pose.pose.pose.orientation.z;
-      myq.w = gb6pose.pose.pose.orientation.w;
-
-      gbpose.pose.pose.position.x = gb6pose.pose.pose.position.x;
-      gbpose.pose.pose.position.y = gb6pose.pose.pose.position.y;
-      gbpose.pose.pose.position.z = gb6pose.pose.pose.position.z;
-      gbpose.twist.twist.linear.x = gb6pose.twist.twist.linear.x;
-      gbpose.twist.twist.linear.y = gb6pose.twist.twist.linear.y;
-      gbpose.twist.twist.linear.z = gb6pose.twist.twist.linear.z;
-    }
-
-    else if (QuadStatus.id == 7)
-    {
-      myq.x = gb7pose.pose.pose.orientation.x;
-      myq.y = gb7pose.pose.pose.orientation.y;
-      myq.z = gb7pose.pose.pose.orientation.z;
-      myq.w = gb7pose.pose.pose.orientation.w;
-
-      gbpose.pose.pose.position.x = gb7pose.pose.pose.position.x;
-      gbpose.pose.pose.position.y = gb7pose.pose.pose.position.y;
-      gbpose.pose.pose.position.z = gb7pose.pose.pose.position.z;
-      gbpose.twist.twist.linear.x = gb7pose.twist.twist.linear.x;
-      gbpose.twist.twist.linear.y = gb7pose.twist.twist.linear.y;
-      gbpose.twist.twist.linear.z = gb7pose.twist.twist.linear.z;
-    }
-
-    else if (QuadStatus.id == 8)
-    {
-      myq.x = gb8pose.pose.pose.orientation.x;
-      myq.y = gb8pose.pose.pose.orientation.y;
-      myq.z = gb8pose.pose.pose.orientation.z;
-      myq.w = gb8pose.pose.pose.orientation.w;
-
-      gbpose.pose.pose.position.x = gb8pose.pose.pose.position.x;
-      gbpose.pose.pose.position.y = gb8pose.pose.pose.position.y;
-      gbpose.pose.pose.position.z = gb8pose.pose.pose.position.z;
-      gbpose.twist.twist.linear.x = gb8pose.twist.twist.linear.x;
-      gbpose.twist.twist.linear.y = gb8pose.twist.twist.linear.y;
-      gbpose.twist.twist.linear.z = gb8pose.twist.twist.linear.z;
-    }
-
-    else if (QuadStatus.id == 9)
-    {
-      myq.x = gb9pose.pose.pose.orientation.x;
-      myq.y = gb9pose.pose.pose.orientation.y;
-      myq.z = gb9pose.pose.pose.orientation.z;
-      myq.w = gb9pose.pose.pose.orientation.w;
-
-      gbpose.pose.pose.position.x = gb9pose.pose.pose.position.x;
-      gbpose.pose.pose.position.y = gb9pose.pose.pose.position.y;
-      gbpose.pose.pose.position.z = gb9pose.pose.pose.position.z;
-      gbpose.twist.twist.linear.x = gb9pose.twist.twist.linear.x;
-      gbpose.twist.twist.linear.y = gb9pose.twist.twist.linear.y;
-      gbpose.twist.twist.linear.z = gb9pose.twist.twist.linear.z;
-    }
-
-    else if (QuadStatus.id == 10)
-    {
-      myq.x = gb10pose.pose.pose.orientation.x;
-      myq.y = gb10pose.pose.pose.orientation.y;
-      myq.z = gb10pose.pose.pose.orientation.z;
-      myq.w = gb10pose.pose.pose.orientation.w;
-
-      gbpose.pose.pose.position.x = gb10pose.pose.pose.position.x;
-      gbpose.pose.pose.position.y = gb10pose.pose.pose.position.y;
-      gbpose.pose.pose.position.z = gb10pose.pose.pose.position.z;
-      gbpose.twist.twist.linear.x = gb10pose.twist.twist.linear.x;
-      gbpose.twist.twist.linear.y = gb10pose.twist.twist.linear.y;
-      gbpose.twist.twist.linear.z = gb10pose.twist.twist.linear.z;
-    }
-
-    else if (QuadStatus.id == 11)
-    {
-      myq.x = gb11pose.pose.pose.orientation.x;
-      myq.y = gb11pose.pose.pose.orientation.y;
-      myq.z = gb11pose.pose.pose.orientation.z;
-      myq.w = gb11pose.pose.pose.orientation.w;
-
-      gbpose.pose.pose.position.x = gb11pose.pose.pose.position.x;
-      gbpose.pose.pose.position.y = gb11pose.pose.pose.position.y;
-      gbpose.pose.pose.position.z = gb11pose.pose.pose.position.z;
-      gbpose.twist.twist.linear.x = gb11pose.twist.twist.linear.x;
-      gbpose.twist.twist.linear.y = gb11pose.twist.twist.linear.y;
-      gbpose.twist.twist.linear.z = gb11pose.twist.twist.linear.z;
-    }
-
-    else if (QuadStatus.id == 12)
-    {
-      myq.x = gb12pose.pose.pose.orientation.x;
-      myq.y = gb12pose.pose.pose.orientation.y;
-      myq.z = gb12pose.pose.pose.orientation.z;
-      myq.w = gb12pose.pose.pose.orientation.w;
-
-      gbpose.pose.pose.position.x = gb12pose.pose.pose.position.x;
-      gbpose.pose.pose.position.y = gb12pose.pose.pose.position.y;
-      gbpose.pose.pose.position.z = gb12pose.pose.pose.position.z;
-      gbpose.twist.twist.linear.x = gb12pose.twist.twist.linear.x;
-      gbpose.twist.twist.linear.y = gb12pose.twist.twist.linear.y;
-      gbpose.twist.twist.linear.z = gb12pose.twist.twist.linear.z;
-    }
-
-    else if (QuadStatus.id == 13)
-    {
-      myq.x = gb13pose.pose.pose.orientation.x;
-      myq.y = gb13pose.pose.pose.orientation.y;
-      myq.z = gb13pose.pose.pose.orientation.z;
-      myq.w = gb13pose.pose.pose.orientation.w;
-
-      gbpose.pose.pose.position.x = gb13pose.pose.pose.position.x;
-      gbpose.pose.pose.position.y = gb13pose.pose.pose.position.y;
-      gbpose.pose.pose.position.z = gb13pose.pose.pose.position.z;
-      gbpose.twist.twist.linear.x = gb13pose.twist.twist.linear.x;
-      gbpose.twist.twist.linear.y = gb13pose.twist.twist.linear.y;
-      gbpose.twist.twist.linear.z = gb13pose.twist.twist.linear.z;
-    }
-
-    GetEulerAngles(myq, &yaw, &pitch, &roll);
+     GetEulerAngles(myq, &yaw, &pitch, &roll);
 
     return(yaw);
 
